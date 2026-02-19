@@ -96,44 +96,94 @@ with tab1:
             else:
                 st.error(str(res))
 
-# --- TAB 3: SCHEDULED QUEUE (Posts AND Comments) ---
-with tab3:
-    st.subheader("Manage Upcoming Posts & Comments")
-    q_res = requests.get(f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}").json()
-    q_posts = q_res.get('data', [])
+# --- TAB 3: SCHEDULED QUEUE ---
+    with tab3:
+        st.subheader("📅 Manage Upcoming Posts & Comments")
+        
+        # 1. Fetch Scheduled Posts from Facebook
+        # We use a try/except block to catch API errors immediately
+        try:
+            q_url = f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}"
+            q_res = requests.get(q_url).json()
+            q_posts = q_res.get('data', [])
+        except Exception as e:
+            st.error(f"Error fetching queue: {e}")
+            q_posts = []
 
-    if not q_posts:
-        st.info("Nothing scheduled.")
-    else:
-        for p in q_posts:
-            p_id = p['id']
-            with st.container(border=True):
-                c_main, c_side = st.columns([3, 1])
-                with c_main:
-                    st_time = datetime.fromtimestamp(p['scheduled_publish_time']).strftime('%Y-%m-%d %H:%M')
-                    st.write(f"📅 **Live at:** `{st_time}`")
+        if not q_posts:
+            st.info("✨ Your queue is empty. Go to 'New Post' to schedule some fire content!")
+        else:
+            st.write(f"You have **{len(q_posts)}** posts waiting to go live.")
+            
+            for p in q_posts:
+                p_id = p['id']
+                # Create a clean card for each scheduled item
+                with st.container(border=True):
+                    col_main, col_img = st.columns([3, 1])
                     
-                    # Edit Post Caption
-                    new_msg = st.text_area("Edit Post Caption", value=p.get('message', ''), key=f"q_msg_{p_id}")
-                    
-                    # List & Edit Linked Comments
-                    st.write("📌 **Linked Comments:**")
-                    linked_comms = st.session_state.sched_comment_store.get(p_id, [])
-                    for idx, c_text in enumerate(linked_comms):
-                        linked_comms[idx] = st.text_input(f"Comment {idx+1}", value=c_text, key=f"q_comm_{p_id}_{idx}")
-                    
-                    st.session_state.sched_comment_store[p_id] = linked_comms
+                    with col_main:
+                        # Convert FB timestamp to readable local time
+                        live_time = datetime.fromtimestamp(p['scheduled_publish_time']).strftime('%Y-%m-%d %I:%M %p')
+                        st.success(f"⏰ **Scheduled for:** {live_time}")
+                        
+                        # EDIT POST CAPTION
+                        new_msg = st.text_area("Post Caption", value=p.get('message', ''), key=f"edit_msg_{p_id}", height=100)
+                        
+                        # LINKED COMMENTS SECTION
+                        st.write("---")
+                        st.write("💬 **Linked Scheduled Comments:**")
+                        
+                        # Initialize local store for this post if it doesn't exist
+                        if "sched_comment_store" not in st.session_state:
+                            st.session_state.sched_comment_store = {}
+                        
+                        current_comments = st.session_state.sched_comment_store.get(p_id, [])
+                        
+                        if not current_comments:
+                            st.caption("No comments linked to this post.")
+                        else:
+                            for idx, c_text in enumerate(current_comments):
+                                # Update comments in real-time as user types
+                                current_comments[idx] = st.text_area(
+                                    f"Comment #{idx+1}", 
+                                    value=c_text, 
+                                    key=f"edit_comm_{p_id}_{idx}",
+                                    height=70
+                                )
+                        
+                        # ACTION BUTTONS
+                        st.write("")
+                        btn_col1, btn_col2 = st.columns(2)
+                        
+                        if btn_col1.button("💾 SAVE ALL CHANGES", key=f"btn_sv_{p_id}", use_container_width=True):
+                            # Save caption to Facebook
+                            save_res = requests.post(
+                                f"https://graph.facebook.com/v21.0/{p_id}",
+                                data={'message': new_msg, 'access_token': target_token}
+                            )
+                            # Save comments to local memory
+                            st.session_state.sched_comment_store[p_id] = current_comments
+                            
+                            if save_res.status_code == 200:
+                                st.toast("Successfully saved!", icon="✅")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error("Failed to update Facebook post.")
 
-                    # Actions
-                    b1, b2 = st.columns(2)
-                    if b1.button("💾 Save All Changes", key=f"sv_{p_id}"):
-                        requests.post(f"https://graph.facebook.com/v21.0/{p_id}", data={'message': new_msg, 'access_token': target_token})
-                        st.success("Changes saved!")
-                        st.rerun()
-                    if b2.button("🗑️ Delete Everything", key=f"dl_{p_id}"):
-                        requests.delete(f"https://graph.facebook.com/v21.0/{p_id}?access_token={target_token}")
-                        if p_id in st.session_state.sched_comment_store:
-                            del st.session_state.sched_comment_store[p_id]
-                        st.rerun()
-                with c_side:
-                    if p.get('picture'): st.image(p['picture'], use_container_width=True)
+                        if btn_col2.button("🗑️ DELETE EVERYTHING", key=f"btn_dl_{p_id}", type="secondary", use_container_width=True):
+                            # Delete from Facebook
+                            del_res = requests.delete(f"https://graph.facebook.com/v21.0/{p_id}?access_token={target_token}")
+                            # Wipe from local memory
+                            if p_id in st.session_state.sched_comment_store:
+                                del st.session_state.sched_comment_store[p_id]
+                            
+                            st.toast("Post and comments deleted.", icon="🗑️")
+                            time.sleep(0.5)
+                            st.rerun()
+
+                    with col_img:
+                        if p.get('picture'):
+                            st.image(p['picture'], caption="Post Preview", use_container_width=True)
+                        else:
+                            st.info("No Image")
