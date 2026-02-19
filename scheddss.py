@@ -120,13 +120,17 @@ else:
                         st.error(res.json().get('error', {}).get('message'))
 
    # --- TAB 2: SMART COMMENTER ---
-with tab2:
-    st.subheader("💬 Smart Post Commenter")
+    with tab2:
+        # SAFETY CHECK: Only run if target_id and target_token are defined
+        if 'target_id' not in locals() or 'target_token' not in locals():
+            st.warning("⚠️ Please select a Page from the sidebar first to load posts.")
+        else:
+            st.subheader("💬 Smart Post Commenter")
 
     # 1. FETCH RECENT POSTS
-    with st.spinner("Fetching your latest posts..."):
-        # We fetch the small 'picture' for the thumbnail and the 'message'
-        posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture,created_time&access_token={target_token}&limit=20"
+   # 1. FETCH RECENT POSTS
+            with st.spinner("Fetching your latest posts..."):
+                posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture,created_time&access_token={target_token}&limit=20"
         posts = requests.get(posts_url).json().get('data', [])
 
     if posts:
@@ -218,4 +222,5 @@ with tab2:
                 st.success(f"✅ {immediate_count} comment(s) posted successfully!")
     else:
         st.info("No published posts found to display.")
+
 
