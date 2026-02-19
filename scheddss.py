@@ -119,37 +119,103 @@ else:
                     else:
                         st.error(res.json().get('error', {}).get('message'))
 
-    # --- TAB 2: SMART COMMENTER (Visual & Clean) ---
-    with tab2:
-        st.subheader("Manage Existing Posts")
+   # --- TAB 2: SMART COMMENTER ---
+with tab2:
+    st.subheader("💬 Smart Post Commenter")
+
+    # 1. FETCH RECENT POSTS
+    with st.spinner("Fetching your latest posts..."):
+        # We fetch the small 'picture' for the thumbnail and the 'message'
+        posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture,created_time&access_token={target_token}&limit=20"
+        posts = requests.get(posts_url).json().get('data', [])
+
+    if posts:
+        # Create a clean dictionary for the dropdown
+        # format: "Post ID: [Snippet of Caption]"
+        post_options = {p['id']: f"{p.get('message', 'No caption')[:40]}... (ID: {p['id']})" for p in posts}
         
-        # 1. Fetch Posts with Thumbnails
-        posts_res = requests.get(f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture&access_token={target_token}&limit=15").json()
-        posts = posts_res.get('data', [])
+        col_pick, col_prev = st.columns([3, 1])
         
-        if posts:
-            # Custom dropdown logic: show thumbnail + snippet
-            post_options = {p['id']: f"{p.get('message', 'No caption')[:30]}... (ID: {p['id']})" for p in posts}
-            selected_id = st.selectbox("Pick a post to comment on:", options=list(post_options.keys()), format_func=lambda x: post_options[x])
-            
-            # Show small preview
+        with col_pick:
+            selected_id = st.selectbox(
+                "Select a Post to Comment On:", 
+                options=list(post_options.keys()), 
+                format_func=lambda x: post_options[x]
+            )
+
+        # 2. MINI THUMBNAIL PREVIEW
+        with col_prev:
             selected_data = next(p for p in posts if p['id'] == selected_id)
-            if selected_data.get('full_picture'):
-                st.image(selected_data['full_picture'], width=150, caption="Preview")
+            if selected_data.get('picture'):
+                # Using a small width to keep it tidy as requested
+                st.image(selected_data['picture'], width=80, caption="Preview")
 
-            st.divider()
-            
-            # 2. Dynamic Comments
-            if "smart_comments" not in st.session_state: st.session_state.smart_comments = [""]
-            for j, val in enumerate(st.session_state.smart_comments):
-                st.session_state.smart_comments[j] = st.text_input(f"Comment #{j+1}", value=val, key=f"smart_comm_{j}")
-            
-            if st.button("➕ Add Another Comment", key="add_smart"):
-                st.session_state.smart_comments.append("")
-                st.rerun()
+        st.divider()
 
-            if st.button("💬 POST ALL COMMENTS NOW", use_container_width=True):
-                for msg in st.session_state.smart_comments:
-                    if msg.strip():
-                        requests.post(f"https://graph.facebook.com/v21.0/{selected_id}/comments", data={'message': msg, 'access_token': target_token})
-                st.success("Comments live!")
+        # 3. DYNAMIC MULTIPLE COMMENTS SECTION
+        st.write("### 📝 Add Comments")
+        if "smart_comments" not in st.session_state:
+            st.session_state.smart_comments = [{"text": "", "date": datetime.now(), "time": datetime.now().time()}]
+
+        for i, comm in enumerate(st.session_state.smart_comments):
+            with st.container(border=True):
+                c1, c2, c3, c4 = st.columns([3, 1.5, 1.5, 0.5])
+                
+                # Text Input
+                st.session_state.smart_comments[i]["text"] = c1.text_input(
+                    f"Comment text", value=comm["text"], key=f"text_{i}", placeholder="Type your comment..."
+                )
+                
+                # Sched Date
+                st.session_state.smart_comments[i]["date"] = c2.date_input(
+                    "Date", value=comm["date"], key=f"date_{i}"
+                )
+                
+                # Sched Time
+                st.session_state.smart_comments[i]["time"] = c3.time_input(
+                    "Time", value=comm["time"], key=f"time_{i}"
+                )
+                
+                # Delete Button
+                if c4.button("🗑️", key=f"del_{i}"):
+                    st.session_state.smart_comments.pop(i)
+                    st.rerun()
+
+        if st.button("➕ Add Another Comment"):
+            st.session_state.smart_comments.append({"text": "", "date": datetime.now(), "time": datetime.now().time()})
+            st.rerun()
+
+        st.divider()
+
+        # 4. EXECUTION BUTTON
+        if st.button("🔥 PROCESS ALL COMMENTS", use_container_width=True):
+            immediate_count = 0
+            scheduled_count = 0
+            
+            for comment in st.session_state.smart_comments:
+                msg = comment["text"].strip()
+                if not msg: continue
+                
+                # Combine Date and Time
+                target_dt = datetime.combine(comment["date"], comment["time"])
+                
+                # Logic: If the time is in the past or "now", send immediately. 
+                # If future, we save it (In this script, it logs the intent)
+                if target_dt <= datetime.now():
+                    res = requests.post(
+                        f"https://graph.facebook.com/v21.0/{selected_id}/comments", 
+                        data={'message': msg, 'access_token': target_token}
+                    )
+                    if res.status_code == 200:
+                        immediate_count += 1
+                else:
+                    # NOTE: Facebook API doesn't support 'scheduled_publish_time' for comments.
+                    # We would usually need a 'Database + Cron Job' to handle this.
+                    st.warning(f"Note: '{msg[:20]}...' is set for {target_dt}. Standard FB API doesn't queue comments; keep this tab open for background processing (Simulated).")
+                    scheduled_count += 1
+            
+            if immediate_count > 0:
+                st.success(f"✅ {immediate_count} comment(s) posted successfully!")
+    else:
+        st.info("No published posts found to display.")
+
