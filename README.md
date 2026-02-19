@@ -1,6 +1,6 @@
 # 👟 Scheddss: Universal Uploader
 
-A lightweight web application built with **Python** and **Streamlit** that allows users to authenticate via Facebook and upload videos directly to their managed shoe business pages.
+A lightweight web application built with **Python** and **Streamlit** that allows users to authenticate via Facebook and upload videos directly to their managed business pages.
 
 ## 🚀 Features
 * **Secure OAuth Login**: Connects directly to Facebook using official Meta APIs.
