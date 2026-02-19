@@ -5,7 +5,7 @@ import requests
 # These must match your Meta Dashboard exactly
 CLIENT_ID = "910661605032071"
 CLIENT_SECRET = "a57ba995d5178d5ee80c3debba225138"
-REDIRECT_URI = "http://localhost:8501"  # NO SLASH AT THE END
+REDIRECT_URI = "https://scheddss.streamlit.app/"
 
 st.set_page_config(page_title="Scheddss Universal", page_icon="👟", layout="centered")
 
@@ -123,4 +123,5 @@ else:
             else:
                 st.warning("Please select a video file first.")
     else:
+
         st.warning("No pages found. Make sure you gave the app permission to 'Manage Pages' in the Facebook popup.")
