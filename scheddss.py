@@ -161,5 +161,55 @@ else:
                 if st.button("💬 BLAST COMMENTS", use_container_width=True):
                     for c in st.session_state.smart_comments:
                         if c["text"].strip():
+
+    # --- TAB 3: SCHEDULED QUEUE MANAGER ---
+    with tab3:
+        st.subheader("Manage Your Upcoming Posts")
+        
+        # 1. FETCH SCHEDULED POSTS
+        # We use 'promotable_posts' with 'is_published=false' to find scheduled items
+        sched_url = f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}"
+        sched_res = requests.get(sched_url).json()
+        sched_posts = sched_res.get('data', [])
+
+        if not sched_posts:
+            st.info("No posts currently scheduled.")
+        else:
+            for p in sched_posts:
+                with st.container(border=True):
+                    col_img, col_txt, col_action = st.columns([1, 3, 2])
+                    
+                    with col_img:
+                        if p.get('picture'):
+                            st.image(p['picture'], width=100)
+                    
+                    with col_txt:
+                        # Convert timestamp to readable time
+                        st_time = datetime.fromtimestamp(p['scheduled_publish_time']).strftime('%Y-%m-%d %H:%M')
+                        st.write(f"**Goes live at:** `{st_time}`")
+                        new_msg = st.text_area("Edit Caption", value=p.get('message', ''), key=f"edit_{p['id']}")
+                    
+                    with col_action:
+                        # UPDATE BUTTON
+                        if st.button("💾 Save Changes", key=f"save_{p['id']}"):
+                            update_res = requests.post(
+                                f"https://graph.facebook.com/v21.0/{p['id']}",
+                                data={'message': new_msg, 'access_token': target_token}
+                            )
+                            if update_res.status_code == 200:
+                                st.success("Updated!")
+                                time.sleep(1)
+                                st.rerun()
+                        
+                        # DELETE BUTTON
+                        if st.button("🗑️ Delete Scheduled Post", key=f"del_{p['id']}", type="secondary"):
+                            del_res = requests.delete(f"https://graph.facebook.com/v21.0/{p['id']}?access_token={target_token}")
+                            if del_res.status_code == 200:
+                                st.warning("Post Deleted.")
+                                time.sleep(1)
+                                st.rerun()
+
+                            
                             requests.post(f"https://graph.facebook.com/v21.0/{sel_id}/comments", data={'message': c["text"], 'access_token': target_token})
                     st.success("All comments sent!")
+
