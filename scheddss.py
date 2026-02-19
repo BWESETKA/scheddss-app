@@ -1,124 +1,120 @@
 import streamlit as st
 import requests
+from datetime import datetime
 
 # --- 1. CONFIGURATION ---
 CLIENT_ID = "910661605032071"
 CLIENT_SECRET = "a57ba995d5178d5ee80c3debba225138"
 REDIRECT_URI = "https://scheddss.streamlit.app/"
 
-st.set_page_config(page_title="Scheddss Universal", page_icon="👟", layout="wide")
+st.set_page_config(page_title="Scheddss Pro", page_icon="👟", layout="wide")
 
-# --- 2. SESSION STATE ---
+# Initialize session state for the "Plus Button" comments
+if "comment_list" not in st.session_state:
+    st.session_state.comment_list = [""] # Starts with one empty comment box
 if "access_token" not in st.session_state:
     st.session_state.access_token = None
 
-st.title("👟 Scheddss: Universal Uploader")
+st.title("👟 Scheddss: Advanced Scheduler")
 
-# --- 3. THE TOKEN UPGRADER (The "Secret Sauce") ---
-def get_long_lived_token(short_token):
-    """Swaps a 2-hour token for a 60-day token"""
-    url = "https://graph.facebook.com/v21.0/oauth/access_token"
-    params = {
-        "grant_type": "fb_exchange_token",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "fb_exchange_token": short_token
-    }
-    try:
-        response = requests.get(url, params=params).json()
-        return response.get("access_token")
-    except:
-        return None
-
-# --- 4. AUTHENTICATION LOGIC ---
+# --- 2. AUTHENTICATION ---
 if st.session_state.access_token is None:
     auth_url = (
         f"https://www.facebook.com/v21.0/dialog/oauth?"
         f"client_id={CLIENT_ID}&"
         f"redirect_uri={REDIRECT_URI}&"
         f"response_type=code&"
-        f"scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
+        f"scope=pages_show_list,pages_manage_posts,pages_read_engagement,publish_video,public_profile"
     )
-
-    st.write("### 🔒 System Locked")
-    st.info("Please connect your Facebook account to manage your shoe pages.")
+    st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
     
-    # Official Link Button (Guaranteed Clickable)
-    st.link_button("🔓 Log in with Facebook", auth_url, type="primary", use_container_width=True)
-
-    # Handle the return from Facebook
     if "code" in st.query_params:
         code = st.query_params["code"]
-        
-        # Step A: Get the Initial Token
-        token_url = "https://graph.facebook.com/v21.0/oauth/access_token"
-        params = {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "redirect_uri": REDIRECT_URI,
-            "code": code
-        }
-        
-        res = requests.get(token_url, params=params).json()
-        short_token = res.get("access_token")
-
-        if short_token:
-            # Step B: AUTO-UPGRADE to 60-day token
-            long_token = get_long_lived_token(short_token)
-            st.session_state.access_token = long_token if long_token else short_token
-            st.query_params.clear()
+        token_url = f"https://graph.facebook.com/v21.0/oauth/access_token?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&client_secret={CLIENT_SECRET}&code={code}"
+        res = requests.get(token_url).json()
+        if "access_token" in res:
+            st.session_state.access_token = res["access_token"]
             st.rerun()
-        else:
-            st.error(f"Login Error: {res.get('error', {}).get('message', 'Unknown error')}")
-
 else:
-    # --- 5. THE MAIN APP (Logged In) ---
+    # --- 3. DYNAMIC PAGE PICKER ---
     user_token = st.session_state.access_token
+    # This call fetches EVERY page you have permission for
+    pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
+    pages_data = pages_res.get('data', [])
 
+    if not pages_data:
+        st.warning("No pages found. Did you select them during Facebook Login?")
+        if st.button("Reset Permissions"):
+            st.session_state.access_token = None
+            st.rerun()
+        st.stop()
+
+    # Create the mapping for the dropdown
+    page_map = {p['name']: (p['id'], p['access_token']) for p in pages_data}
+    
     with st.sidebar:
-        st.write("👤 **Logged In**")
-        if st.button("🚪 Logout"):
+        st.header("Settings")
+        selected_page_name = st.selectbox("Select Target Page", list(page_map.keys()))
+        target_id, target_token = page_map[selected_page_name]
+        st.divider()
+        if st.button("Logout"):
             st.session_state.access_token = None
             st.rerun()
 
-    # Get Pages and their individual tokens
-    pages_url = f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}"
-    pages_data = requests.get(pages_url).json().get('data', [])
+    tab1, tab2 = st.tabs(["🚀 New Media Post", "💬 Smart Commenter"])
 
-    if pages_data:
-        st.success("✅ Connected to Facebook Pages!")
-        
-        page_names = [p['name'] for p in pages_data]
-        selected_page = st.selectbox("Select Page to Post To:", page_names)
-        
-        # Find the specific token for the selected page
-        target_page = next(p for p in pages_data if p['name'] == selected_page)
-        target_id = target_page['id']
-        target_token = target_page['access_token'] # This is the key for posting
-
-        st.divider()
-        
+    # --- TAB 1: UPLOADER ---
+    with tab1:
+        st.subheader(f"Posting to: {selected_page_name}")
         col1, col2 = st.columns(2)
         with col1:
-            video_file = st.file_uploader("🎥 Select Video", type=['mp4', 'mov'])
+            files = st.file_uploader("Upload Images/Videos", accept_multiple_files=True)
+            caption = st.text_area("Post Caption")
         with col2:
-            caption = st.text_area("✍️ Caption", "Fresh drops! 👟🔥\nAvailable now.")
+            post_now = st.radio("Timing", ["Immediately", "Schedule"])
+            if post_now == "Schedule":
+                d = st.date_input("Date")
+                t = st.time_input("Time")
+                st.info(f"Unix Timestamp will be generated for: {d} {t}")
 
-        if st.button("🚀 PUBLISH NOW"):
-            if video_file:
-                with st.spinner(f"Uploading to {selected_page}..."):
-                    upload_url = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
-                    files = {'file': (video_file.name, video_file.getvalue(), 'video/mp4')}
-                    data = {'description': caption, 'access_token': target_token}
-                    
-                    post_res = requests.post(upload_url, data=data, files=files)
-                    
-                    if post_res.status_code == 200:
-                        st.balloons()
-                        st.success("Post successful! Check your page.")
-                    else:
-                        st.error(f"Upload Failed: {post_res.json().get('error', {}).get('message')}")
-            else:
-                st.warning("Please upload a video file.")
-    else:
-        st.warning("No pages found. Ensure you granted permissions to your pages during login.")
+        if st.button("🚀 Publish Post"):
+            st.write("Processing upload...")
+
+    # --- TAB 2: SMART COMMENTER ---
+    with tab2:
+        st.subheader("Manage Comments")
+        
+        # 1. DYNAMIC POST PICKER
+        with st.spinner("Loading recent posts..."):
+            posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?access_token={target_token}&limit=15"
+            posts = requests.get(posts_url).json().get('data', [])
+        
+        if posts:
+            post_options = {f"{p.get('message', 'No text content')[:50]}...": p['id'] for p in posts}
+            target_post_id = st.selectbox("Pick a post to comment on:", list(post_options.keys()))
+            actual_post_id = post_options[target_post_id]
+        else:
+            actual_post_id = st.text_input("No posts found. Enter Post ID manually:")
+
+        st.divider()
+        st.write("### 📝 Scheduled Comments")
+        
+        # 2. UNLIMITED COMMENT BOXES
+        for i, comment_val in enumerate(st.session_state.comment_list):
+            col_msg, col_del = st.columns([5, 1])
+            st.session_state.comment_list[i] = col_msg.text_input(f"Comment #{i+1}", value=comment_val, key=f"input_{i}")
+            if col_del.button("🗑️", key=f"del_{i}"):
+                st.session_state.comment_list.pop(i)
+                st.rerun()
+
+        # THE PLUS BUTTON
+        if st.button("➕ Add Another Comment"):
+            st.session_state.comment_list.append("")
+            st.rerun()
+
+        if st.button("🔥 SEND ALL COMMENTS", use_container_width=True):
+            for msg in st.session_state.comment_list:
+                if msg.strip():
+                    requests.post(f"https://graph.facebook.com/v21.0/{actual_post_id}/comments", 
+                                  data={'message': msg, 'access_token': target_token})
+            st.success("All comments sent!")
