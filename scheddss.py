@@ -3,25 +3,25 @@ import requests
 from datetime import datetime
 import time
 
-# --- 1. INITIALIZATION & CONFIG ---
+# --- 1. CONFIGURATION ---
 CLIENT_ID = "910661605032071"
 CLIENT_SECRET = "a57ba995d5178d5ee80c3debba225138"
 REDIRECT_URI = "https://scheddss.streamlit.app/"
 
 st.set_page_config(page_title="Scheddss Pro", page_icon="👟", layout="wide")
 
-# Initialize safety variables to prevent NameError
+# Initialize variables to prevent NameErrors
 target_id = None
 target_token = None
 
-# --- 2. PERSISTENT DATA LOGIC (URL SYNC) ---
-# Check URL for saved token to prevent repeat login
+# --- 2. PERSISTENT LOGIN & DATA ---
 if "token" in st.query_params:
     st.session_state.access_token = st.query_params["token"]
-elif "access_token" not in st.session_state:
+
+if "access_token" not in st.session_state:
     st.session_state.access_token = None
 
-st.title("👟 Scheddss: Professional Suite")
+st.title("👟 Scheddss: Universal Suite")
 
 # --- 3. AUTHENTICATION ---
 if st.session_state.access_token is None:
@@ -32,7 +32,7 @@ if st.session_state.access_token is None:
         f"response_type=code&"
         f"scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
     )
-    st.info("👋 Welcome! Log in once to save your session in the URL.")
+    st.info("👋 Log in once. Bookmark the URL afterwards to stay logged in!")
     st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
 
     if "code" in st.query_params:
@@ -43,7 +43,7 @@ if st.session_state.access_token is None:
             st.session_state.access_token = res["access_token"]
             st.rerun()
 else:
-    # --- 4. DATA FETCHING ---
+    # --- 4. MAIN APP DATA ---
     user_token = st.session_state.access_token
     try:
         pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
@@ -52,8 +52,8 @@ else:
         pages_data = []
 
     if not pages_data:
-        st.error("Session expired or no pages found.")
-        if st.button("Re-authenticate"):
+        st.error("No pages found or token expired.")
+        if st.sidebar.button("Reset Login"):
             st.query_params.clear()
             st.session_state.access_token = None
             st.rerun()
@@ -63,153 +63,122 @@ else:
     
     with st.sidebar:
         st.header("Settings")
-        selected_page_name = st.selectbox("Select Target Page", list(page_map.keys()))
+        selected_page_name = st.selectbox("Target Page", list(page_map.keys()))
         target_id, target_token = page_map[selected_page_name]
         st.divider()
-        if st.button("Clear App & Logout"):
+        if st.button("Logout"):
             st.query_params.clear()
             st.session_state.access_token = None
             st.rerun()
 
-    tab1, tab2 = st.tabs(["🚀 New Post Creator", "💬 Smart Commenter"])
+    tab1, tab2, tab3 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue"])
 
     # --- TAB 1: NEW POST ---
     with tab1:
-        st.subheader("Post & Sched Comment Queue")
+        st.subheader("Create Media Post")
         col1, col2 = st.columns(2)
-        
         with col1:
-            uploaded_files = st.file_uploader("Upload Media", accept_multiple_files=True)
-            # URL persistence for caption
-            saved_cap = st.query_params.get("cap", "")
-            caption = st.text_area("Post Caption", value=saved_cap)
-            if caption != saved_cap: st.query_params["cap"] = caption
-
-            st.write("### 📝 Attached Comments")
-            if "new_comments" not in st.session_state: st.session_state.new_comments = [""]
+            uploaded_files = st.file_uploader("Upload Files", accept_multiple_files=True)
+            caption = st.text_area("Post Caption", value=st.query_params.get("cap", ""))
+            if caption: st.query_params["cap"] = caption
             
+            st.write("### 📝 Auto-Comments")
+            if "new_comments" not in st.session_state: st.session_state.new_comments = [""]
             for i, val in enumerate(st.session_state.new_comments):
                 st.session_state.new_comments[i] = st.text_input(f"Comment #{i+1}", value=val, key=f"nc_{i}")
-            
-            if st.button("➕ Add Comment Line"):
+            if st.button("➕ Add Comment"):
                 st.session_state.new_comments.append("")
                 st.rerun()
 
         with col2:
-            timing = st.radio("Timing", ["Immediately", "Schedule"])
+            timing = st.radio("Post Timing", ["Immediately", "Schedule"])
             pub_time = datetime.now()
             if timing == "Schedule":
                 d = st.date_input("Date")
                 t = st.time_input("Time")
                 pub_time = datetime.combine(d, t)
 
-        if st.button("🚀 EXECUTE POSTING", use_container_width=True):
-            with st.spinner("Uploading..."):
-                if uploaded_files:
+        if st.button("🚀 EXECUTE", use_container_width=True):
+            if uploaded_files:
+                with st.spinner("Uploading..."):
                     file = uploaded_files[0]
                     is_vid = "video" in file.type
-                    endpoint = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
+                    ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
                     payload = {'access_token': target_token, 'caption' if not is_vid else 'description': caption}
                     if timing == "Schedule":
                         payload.update({'published': 'false', 'scheduled_publish_time': int(pub_time.timestamp())})
                     
-                    res = requests.post(endpoint, data=payload, files={'file': file.getvalue()})
+                    res = requests.post(ep, data=payload, files={'file': file.getvalue()})
                     if res.status_code == 200:
-                        st.success("Post set!")
+                        st.success("Success!")
                         if timing == "Immediately":
                             pid = res.json().get('id')
                             for c in st.session_state.new_comments:
                                 if c.strip(): requests.post(f"https://graph.facebook.com/v21.0/{pid}/comments", data={'message': c, 'access_token': target_token})
-                    else:
-                        st.error(res.text)
+                    else: st.error(res.text)
 
     # --- TAB 2: SMART COMMENTER ---
     with tab2:
-        st.subheader("Visual Post Selector")
-        # Ensure we have target info before calling API
-        if target_id and target_token:
-            posts_res = requests.get(f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture&access_token={target_token}&limit=15").json()
-            posts = posts_res.get('data', [])
-            
-            if posts:
-                post_opts = {p['id']: f"{p.get('message', 'No caption')[:40]}..." for p in posts}
-                sel_id = st.selectbox("Pick a post:", options=list(post_opts.keys()), format_func=lambda x: post_opts[x])
-                
-                # Tiny Thumbnail Preview
-                sel_post = next(p for p in posts if p['id'] == sel_id)
-                if sel_post.get('picture'):
-                    st.image(sel_post['picture'], width=100)
-
-                st.divider()
-                if "smart_comments" not in st.session_state:
-                    st.session_state.smart_comments = [{"text": "", "date": datetime.now(), "time": datetime.now().time()}]
-
-                for j, comm in enumerate(st.session_state.smart_comments):
-                    with st.container(border=True):
-                        c1, c2, c3, c4 = st.columns([3, 1, 1, 0.5])
-                        st.session_state.smart_comments[j]["text"] = c1.text_input("Comment", value=comm["text"], key=f"sct_{j}")
-                        st.session_state.smart_comments[j]["date"] = c2.date_input("Date", value=comm["date"], key=f"scd_{j}")
-                        st.session_state.smart_comments[j]["time"] = c3.time_input("Time", value=comm["time"], key=f"sctime_{j}")
-                        if c4.button("🗑️", key=f"scdel_{j}"):
-                            st.session_state.smart_comments.pop(j)
-                            st.rerun()
-                
-                if st.button("➕ Add Another Comment Line"):
-                    st.session_state.smart_comments.append({"text": "", "date": datetime.now(), "time": datetime.now().time()})
-                    st.rerun()
-
-                if st.button("💬 BLAST COMMENTS", use_container_width=True):
-                    for c in st.session_state.smart_comments:
-                        if c["text"].strip():
-
-    # --- TAB 3: SCHEDULED QUEUE MANAGER ---
-    with tab3:
-        st.subheader("Manage Your Upcoming Posts")
+        st.subheader("Comment on Existing Posts")
+        posts_res = requests.get(f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture&access_token={target_token}&limit=15").json()
+        posts_list = posts_res.get('data', [])
         
-        # 1. FETCH SCHEDULED POSTS
-        # We use 'promotable_posts' with 'is_published=false' to find scheduled items
-        sched_url = f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}"
-        sched_res = requests.get(sched_url).json()
-        sched_posts = sched_res.get('data', [])
+        if posts_list:
+            post_opts = {p['id']: f"{p.get('message', 'No caption')[:40]}..." for p in posts_list}
+            sel_id = st.selectbox("Pick Post:", options=list(post_opts.keys()), format_func=lambda x: post_opts[x])
+            
+            # Mini Thumbnail
+            sel_data = next(p for p in posts_list if p['id'] == sel_id)
+            if sel_data.get('picture'): st.image(sel_data['picture'], width=80)
 
-        if not sched_posts:
-            st.info("No posts currently scheduled.")
-        else:
-            for p in sched_posts:
+            st.divider()
+            if "smart_comments" not in st.session_state:
+                st.session_state.smart_comments = [{"text": "", "date": datetime.now(), "time": datetime.now().time()}]
+
+            for j, comm in enumerate(st.session_state.smart_comments):
                 with st.container(border=True):
-                    col_img, col_txt, col_action = st.columns([1, 3, 2])
-                    
-                    with col_img:
-                        if p.get('picture'):
-                            st.image(p['picture'], width=100)
-                    
-                    with col_txt:
+                    c1, c2, c3, c4 = st.columns([3, 1, 1, 0.5])
+                    st.session_state.smart_comments[j]["text"] = c1.text_input("Comment", value=comm["text"], key=f"sct_{j}")
+                    st.session_state.smart_comments[j]["date"] = c2.date_input("Date", value=comm["date"], key=f"scd_{j}")
+                    st.session_state.smart_comments[j]["time"] = c3.time_input("Time", value=comm["time"], key=f"sctm_{j}")
+                    if c4.button("🗑️", key=f"scdel_{j}"):
+                        st.session_state.smart_comments.pop(j)
+                        st.rerun()
+            
+            if st.button("➕ Add Another"):
+                st.session_state.smart_comments.append({"text": "", "date": datetime.now(), "time": datetime.now().time()})
+                st.rerun()
+
+            if st.button("💬 BLAST", use_container_width=True):
+                for c in st.session_state.smart_comments:
+                    if c["text"].strip():
+                        requests.post(f"https://graph.facebook.com/v21.0/{sel_id}/comments", data={'message': c["text"], 'access_token': target_token})
+                st.success("Done!")
+        else: st.info("No posts found.")
+
+    # --- TAB 3: SCHEDULED QUEUE ---
+    with tab3:
+        st.subheader("Upcoming Posts")
+        q_res = requests.get(f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}").json()
+        q_posts = q_res.get('data', [])
+
+        if not q_posts: st.info("Nothing scheduled yet.")
+        else:
+            for p in q_posts:
+                with st.container(border=True):
+                    col_p, col_i = st.columns([4, 1])
+                    with col_p:
                         # Convert timestamp to readable time
                         st_time = datetime.fromtimestamp(p['scheduled_publish_time']).strftime('%Y-%m-%d %H:%M')
-                        st.write(f"**Goes live at:** `{st_time}`")
-                        new_msg = st.text_area("Edit Caption", value=p.get('message', ''), key=f"edit_{p['id']}")
-                    
-                    with col_action:
-                        # UPDATE BUTTON
-                        if st.button("💾 Save Changes", key=f"save_{p['id']}"):
-                            update_res = requests.post(
-                                f"https://graph.facebook.com/v21.0/{p['id']}",
-                                data={'message': new_msg, 'access_token': target_token}
-                            )
-                            if update_res.status_code == 200:
-                                st.success("Updated!")
-                                time.sleep(1)
-                                st.rerun()
+                        st.write(f"📅 **Live at:** `{st_time}`")
+                        new_msg = st.text_area("Caption", value=p.get('message', ''), key=f"q_edit_{p['id']}")
                         
-                        # DELETE BUTTON
-                        if st.button("🗑️ Delete Scheduled Post", key=f"del_{p['id']}", type="secondary"):
-                            del_res = requests.delete(f"https://graph.facebook.com/v21.0/{p['id']}?access_token={target_token}")
-                            if del_res.status_code == 200:
-                                st.warning("Post Deleted.")
-                                time.sleep(1)
-                                st.rerun()
-
-                            
-                            requests.post(f"https://graph.facebook.com/v21.0/{sel_id}/comments", data={'message': c["text"], 'access_token': target_token})
-                    st.success("All comments sent!")
-
+                        sub_c1, sub_c2 = st.columns(2)
+                        if sub_c1.button("💾 Save", key=f"q_sv_{p['id']}"):
+                            requests.post(f"https://graph.facebook.com/v21.0/{p['id']}", data={'message': new_msg, 'access_token': target_token})
+                            st.rerun()
+                        if sub_c2.button("🗑️ Delete", key=f"q_dl_{p['id']}"):
+                            requests.delete(f"https://graph.facebook.com/v21.0/{p['id']}?access_token={target_token}")
+                            st.rerun()
+                    with col_i:
+                        if p.get('picture'): st.image(p['picture'], width=100)
