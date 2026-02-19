@@ -19,12 +19,13 @@ st.title("👟 Scheddss: Advanced Scheduler")
 
 # --- 2. AUTHENTICATION ---
 if st.session_state.access_token is None:
+    # Removed publish_video to fix the "Invalid Scopes" error
     auth_url = (
         f"https://www.facebook.com/v21.0/dialog/oauth?"
         f"client_id={CLIENT_ID}&"
         f"redirect_uri={REDIRECT_URI}&"
         f"response_type=code&"
-        f"scope=pages_show_list,pages_manage_posts,pages_read_engagement,publish_video,public_profile"
+        f"scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
     )
     st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
     
@@ -118,3 +119,4 @@ else:
                     requests.post(f"https://graph.facebook.com/v21.0/{actual_post_id}/comments", 
                                   data={'message': msg, 'access_token': target_token})
             st.success("All comments sent!")
+
