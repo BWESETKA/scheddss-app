@@ -152,92 +152,118 @@ with tab2:
                 }
                 st.success("Comment added to Scheduled Queue!")
             st.session_state.smart_comments = [""]
-# --- TAB 3: SCHEDULED QUEUE (FULL EDIT VERSION) ---
+            
+# --- TAB 3: FULL MANAGEMENT QUEUE (COMPLETE CODE) ---
 with tab3:
     st.subheader("📅 Unified Management Queue")
     
-    # 1. FETCH FROM FACEBOOK
+    # 1. FETCH FROM FACEBOOK (Scheduled Posts)
     q_url = f"https://graph.facebook.com/v21.0/{target_id}/scheduled_posts?fields=id,message,scheduled_publish_time,full_picture&access_token={target_token}"
-    fb_posts = requests.get(q_url).json().get('data', [])
+    try:
+        fb_posts = requests.get(q_url).json().get('data', [])
+    except:
+        fb_posts = []
 
     st.write("### 🚀 Scheduled Posts")
     if not fb_posts:
-        st.info("No scheduled posts found.")
+        st.info("No scheduled posts found. (Refresh in 60s if you just scheduled one).")
     else:
         for p in fb_posts:
             pid = p['id']
             with st.container(border=True):
                 c1, c2, c3 = st.columns([1, 3, 2])
+                
+                # Time Display
                 ts = p['scheduled_publish_time']
                 lv = datetime.fromtimestamp(ts) + timedelta(hours=utc_offset)
                 
                 with c1:
-                    if p.get('full_picture'): st.image(p['full_picture'], width=100)
-                    else: st.write("🎥 Video")
+                    if p.get('full_picture'):
+                        st.image(p['full_picture'], width=100)
+                    else:
+                        st.write("🎥 Video/Media")
+
                 with c2:
                     st.markdown(f"**Live at:** `{lv.strftime('%I:%M %p')}`")
-                    st.markdown(f"**Caption:** {p.get('message', 'No caption')[:50]}...")
+                    st.markdown(f"**Caption:** {p.get('message', 'No caption')[:100]}...")
+
                 with c3:
+                    # Action Buttons
                     col_edit, col_del = st.columns(2)
                     show_edit = col_edit.button("📝 Edit", key=f"btn_ed_{pid}")
                     show_del = col_del.button("🗑️ Delete", key=f"btn_dl_{pid}")
 
+                # --- 🗑️ IMPROVED DELETE LOGIC ---
                 if show_del:
-                    if st.button("✅ Confirm Delete", key=f"conf_del_{pid}"):
-                        requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
-                        if pid in st.session_state.master_queue: del st.session_state.master_queue[pid]
+                    st.error(f"⚠️ Confirm deletion of Post {pid}?")
+                    dy, dn = st.columns(2)
+                    if dy.button("✅ Yes, Delete", key=f"conf_del_{pid}"):
+                        with st.spinner("Deleting..."):
+                            res = requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}").json()
+                            if res.get("success") or res.get("id"):
+                                if pid in st.session_state.master_queue: del st.session_state.master_queue[pid]
+                                st.success("Deleted!")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(f"Error: {res.get('error', {}).get('message')}")
+                    if dn.button("❌ Cancel", key=f"canc_del_{pid}"):
                         st.rerun()
 
+                # --- 📝 FULL EDIT LOGIC ---
                 if show_edit:
-                    with st.expander("🛠️ Edit Everything", expanded=True):
-                        # 1. Caption & Media
+                    with st.expander("🛠️ Full Edit Menu", expanded=True):
+                        # Edit Caption
                         new_cap = st.text_area("Edit Caption", value=p.get('message', ''), key=f"ecap_{pid}")
+                        
+                        # Replace Media
                         new_file = st.file_uploader("Replace Media (Upload to swap)", key=f"efile_{pid}")
                         
-                        # 2. Time Edit
-                        st.write("**Edit Time:**")
-                        t_col, a_col = st.columns(2)
-                        new_t_str = t_col.text_input("Time (HH:MM)", value=lv.strftime("%I:%M"), key=f"et_{pid}")
-                        new_ampm = a_col.selectbox("AM/PM", ["AM", "PM"], index=0 if lv.strftime("%p")=="AM" else 1, key=f"ea_{pid}")
+                        # Edit Time
+                        st.write("**Change Time:**")
+                        et_col, ea_col = st.columns(2)
+                        new_t_str = et_col.text_input("Time (HH:MM)", value=lv.strftime("%I:%M"), key=f"etime_{pid}")
+                        new_ampm = ea_col.selectbox("AM/PM", ["AM", "PM"], index=0 if lv.strftime("%p")=="AM" else 1, key=f"eampm_{pid}")
                         
-                        # 3. Comment Edit (This was the missing part!)
+                        # Edit Comments
                         st.write("**Edit Linked Comments:**")
                         if pid in st.session_state.master_queue:
-                            current_comms = st.session_state.master_queue[pid]['comments']
-                            for idx in range(len(current_comms)):
-                                current_comms[idx] = st.text_area(f"Comment {idx+1}", value=current_comms[idx], key=f"ecomm_{pid}_{idx}")
+                            comms = st.session_state.master_queue[pid]['comments']
+                            for idx in range(len(comms)):
+                                comms[idx] = st.text_area(f"C#{idx+1}", value=comms[idx], key=f"ecomm_{pid}_{idx}")
                         else:
-                            st.info("No auto-comments linked to this post.")
+                            st.info("No comments linked. Add one below?")
+                            if st.button("➕ Add Comment", key=f"add_c_{pid}"):
+                                st.session_state.master_queue[pid] = {"type": "post", "comments": [""]}
+                                st.rerun()
 
-                        if st.button("💾 SAVE ALL CHANGES", key=f"save_all_{pid}", type="primary"):
-                            # Time Math
+                        if st.button("💾 SAVE ALL CHANGES", key=f"save_ed_{pid}", type="primary"):
+                            # 1. Calc Time
                             h, m = map(int, new_t_str.split(":"))
                             if new_ampm == "PM" and h < 12: h += 12
                             if new_ampm == "AM" and h == 12: h = 0
                             new_dt = datetime.combine(lv.date(), datetime.min.time()).replace(hour=h, minute=m)
                             new_unix = int((new_dt - timedelta(hours=utc_offset)).timestamp())
 
-                            # IF MEDIA CHANGE -> DELETE & REPOST
+                            # 2. Logic: If media changes, we must delete and re-post
                             if new_file:
                                 requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
-                                # Re-upload logic (Same as Tab 1)
                                 is_vid = "video" in new_file.type
                                 ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
                                 payload = {'access_token': target_token, 'caption' if not is_vid else 'description': new_cap, 'published': 'false', 'scheduled_publish_time': new_unix}
                                 res = requests.post(ep, data=payload, files={'file': new_file.getvalue()}).json()
                                 if "id" in res:
-                                    # Move the comments to the NEW post ID
                                     if pid in st.session_state.master_queue:
-                                        st.session_state.master_queue[res['id']] = {"type": "post", "comments": current_comms}
+                                        st.session_state.master_queue[res['id']] = {"type": "post", "comments": comms}
                                         del st.session_state.master_queue[pid]
                             else:
-                                # Update existing post text/time
+                                # 3. Just update Text and Time on FB
                                 requests.post(f"https://graph.facebook.com/v21.0/{pid}", data={'message': new_cap, 'scheduled_publish_time': new_unix, 'access_token': target_token})
-                                # Save the updated comments in memory
+                                # Update memory
                                 if pid in st.session_state.master_queue:
-                                    st.session_state.master_queue[pid]['comments'] = current_comms
+                                    st.session_state.master_queue[pid]['comments'] = comms
                             
-                            st.success("Changes Saved Successfully!")
+                            st.success("Successfully Updated!")
                             time.sleep(1)
                             st.rerun()
 
@@ -248,34 +274,33 @@ with tab3:
         if data['type'] == "delayed_comment":
             with st.container(border=True):
                 clv = datetime.fromtimestamp(data['scheduled_time']) + timedelta(hours=utc_offset)
-                sc_info, sc_act = st.columns([4, 1])
-                sc_info.write(f"⏰ **Comment at:** `{clv.strftime('%I:%M %p')}`")
+                c_info, c_act = st.columns([4, 1])
+                c_info.write(f"⏰ **Scheduled for:** `{clv.strftime('%I:%M %p')}` | Post: `{data['parent_post']}`")
                 
-                if sc_act.button("📝 Edit", key=f"ed_sc_{qid}"):
-                    st.session_state[f"show_sc_ed_{qid}"] = True
+                if c_act.button("📝 Edit", key=f"ed_sc_{qid}"):
+                    st.session_state[f"edit_mode_{qid}"] = True
                 
-                if st.session_state.get(f"show_sc_ed_{qid}"):
-                    # Edit Smart Comment Time
-                    st.write("**Edit Comment Time:**")
-                    stc, sac = st.columns(2)
-                    sc_t = stc.text_input("Time", value=clv.strftime("%I:%M"), key=f"sct_{qid}")
-                    sc_a = sac.selectbox("AM/PM", ["AM", "PM"], index=0 if clv.strftime("%p")=="AM" else 1, key=f"sca_{qid}")
-                    
-                    # Edit Smart Comment Text
-                    for i, txt in enumerate(data['comments']):
-                        data['comments'][i] = st.text_area(f"Comment {i+1}", value=txt, key=f"sctxt_{qid}_{i}")
-                    
-                    if st.button("💾 Save Smart Comment", key=f"sc_save_{qid}"):
-                        # Update the time math
-                        h, m = map(int, sc_t.split(":"))
-                        if sc_a == "PM" and h < 12: h += 12
-                        if sc_a == "AM" and h == 12: h = 0
-                        new_s_dt = datetime.combine(clv.date(), datetime.min.time()).replace(hour=h, minute=m)
-                        data['scheduled_time'] = int((new_s_dt - timedelta(hours=utc_offset)).timestamp())
-                        st.success("Smart Comment Updated!")
-                        st.session_state[f"show_sc_ed_{qid}"] = False
-                        st.rerun()
-                
+                if st.session_state.get(f"edit_mode_{qid}"):
+                    with st.expander("Edit Smart Comment", expanded=True):
+                        # Edit Time
+                        t1, t2 = st.columns(2)
+                        st_str = t1.text_input("Time (HH:MM)", value=clv.strftime("%I:%M"), key=f"st_{qid}")
+                        sa_str = t2.selectbox("AM/PM", ["AM", "PM"], index=0 if clv.strftime("%p")=="AM" else 1, key=f"sa_{qid}")
+                        
+                        # Edit Texts
+                        for i, t in enumerate(data['comments']):
+                            data['comments'][i] = st.text_area(f"Comment {i+1}", value=t, key=f"stxt_{qid}_{i}")
+                        
+                        if st.button("💾 Save Comment", key=f"sv_sc_{qid}"):
+                            h, m = map(int, st_str.split(":"))
+                            if sa_str == "PM" and h < 12: h += 12
+                            if sa_str == "AM" and h == 12: h = 0
+                            new_s_dt = datetime.combine(clv.date(), datetime.min.time()).replace(hour=h, minute=m)
+                            data['scheduled_time'] = int((new_s_dt - timedelta(hours=utc_offset)).timestamp())
+                            st.session_state[f"edit_mode_{qid}"] = False
+                            st.success("Updated!")
+                            st.rerun()
+
                 if st.button("🗑️ Delete", key=f"del_sc_{qid}"):
                     del st.session_state.master_queue[qid]
                     st.rerun()
