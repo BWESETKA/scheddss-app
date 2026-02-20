@@ -157,28 +157,26 @@ with tab1:
                 if p_ampm == "PM" and h < 12: h += 12
                 elif p_ampm == "AM" and h == 12: h = 0
                 dt = datetime.combine(p_d, datetime.min.time()).replace(hour=h, minute=m)
-                # Convert to UTC based on your sidebar offset
                 p_unix = int((dt - timedelta(hours=utc_offset)).timestamp())
                 st.caption(f"Target Unix Time: {p_unix}")
             except:
-                st.error("Invalid time format. Use HH:MM (e.g., 05:30)")
+                st.error("Invalid time format. Use HH:MM")
 
     st.write("---")
     if st.button("🚀 EXECUTE POST", use_container_width=True, type="primary"):
         if not uploaded_files:
-            st.error("Please upload at least one photo or video.")
+            st.error("Please upload media first.")
         elif timing == "Schedule" and p_unix is None:
             st.error("Please fix the schedule time first.")
         else:
-            with st.spinner("📤 Uploading media and syncing to Facebook..."):
+            with st.spinner("📤 Communicating with Facebook..."):
                 try:
-                    # 1. UPLOAD MEDIA (Unpublished)
+                    # 1. UPLOAD MEDIA
                     media_ids = []
                     for f in uploaded_files:
                         is_vid = "video" in f.type
                         ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
                         
-                        # Uploading to FB as 'unpublished' so we can bundle them into one post
                         res = requests.post(
                             ep, 
                             data={'access_token': target_token, 'published': 'false'}, 
@@ -188,7 +186,7 @@ with tab1:
                         if "id" in res:
                             media_ids.append(res['id'])
                         else:
-                            st.error(f"Media Upload Failed: {res}")
+                            st.error(f"Media Upload Failed: {res.get('error', {}).get('message')}")
                             st.stop()
 
                     # 2. CREATE THE FEED POST
@@ -210,17 +208,24 @@ with tab1:
                         post_id = final_post['id']
                         valid_comments = [c for c in st.session_state.temp_comments if c.strip()]
                         
+                        # 3. HANDLE COMMENTS
                         if valid_comments:
                             if timing == "Immediately":
-                                # 🔥 IMMEDIATE: Post comments directly to FB now
                                 for msg in valid_comments:
-                                    requests.post(
+                                    # Small delay to prevent FB spam trigger
+                                    time.sleep(1) 
+                                    c_res = requests.post(
                                         f"https://graph.facebook.com/v21.0/{post_id}/comments",
                                         data={'message': msg, 'access_token': target_token}
-                                    )
-                                st.success(f"✅ Post and {len(valid_comments)} comments are LIVE!")
+                                    ).json()
+                                    
+                                    if "error" in c_res:
+                                        st.error(f"Comment failed: {c_res['error']['message']}")
+                                    else:
+                                        st.toast(f"Comment Posted: {msg[:20]}...")
+                                st.success("Post & Immediate comments processed!")
                             else:
-                                # ☁️ SCHEDULED: Send comments to Supabase for the Worker
+                                # SCHEDULED: Send to Supabase
                                 try:
                                     for msg in valid_comments:
                                         supabase.table("comment_queue").insert({
@@ -230,23 +235,22 @@ with tab1:
                                             "page_access_token": target_token,
                                             "status": "pending"
                                         }).execute()
-                                    st.success(f"📅 Post scheduled! Comments queued for {p_t_str} {p_ampm}.")
+                                    st.success(f"Scheduled! Post & {len(valid_comments)} comments queued.")
                                 except Exception as e:
-                                    st.warning(f"Post scheduled, but comments failed to queue in database: {e}")
+                                    st.error(f"Supabase Error: {e}")
                         else:
-                            st.success("✅ Post executed successfully (no comments added).")
-                        
-                        # Cleanup and Refresh
+                            st.success("Post LIVE (No comments).")
+
+                        # Refresh UI
                         st.session_state.temp_comments = [""]
                         st.session_state.reset_key += 1
-                        time.sleep(3)
+                        time.sleep(2)
                         st.rerun()
                     else:
-                        st.error(f"❌ Facebook rejected the post: {final_post}")
+                        st.error(f"FB Post Error: {final_post.get('error', {}).get('message')}")
 
                 except Exception as e:
-                    st.error(f"💥 Critical Error: {e}")
-
+                    st.error(f"Critical System Error: {e}")
 # --- TAB 2: SMART COMMENTER (COMPLETE) ---
 with tab2:
     st.subheader("💬 Smart Commenter")
@@ -510,6 +514,7 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
 
 
 
