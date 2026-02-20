@@ -3,11 +3,18 @@ import requests
 from datetime import datetime, timedelta
 import time
 import json
+from supabase import create_client, Client
 
-# --- 1. CONFIG & SESSION (STAYING WORKING) ---
+# --- 1. CONFIG & SESSION ---
 CLIENT_ID = "910661605032071"
 CLIENT_SECRET = "a57ba995d5178d5ee80c3debba225138"
 REDIRECT_URI = "https://scheddss.streamlit.app/"
+
+# --- SUPABASE CONFIG ---
+SUPABASE_URL = "https://elpwqqvgrdovocvkzgyl.supabase.co"
+# MAKE SURE TO PASTE YOUR KEY BELOW
+SUPABASE_KEY = "sb_publishable_6FBWrUK1dLH-AUGF7DMjRA_8Wyl3dRE" 
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="Scheddss Pro", page_icon="👟", layout="wide")
 
@@ -368,3 +375,4 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{qid}"):
                             st.session_state[f"active_sc_ed_{qid}"] = False
                             st.rerun()
+
