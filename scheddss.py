@@ -12,13 +12,12 @@ REDIRECT_URI = "https://scheddss.streamlit.app/"
 
 # --- SUPABASE CONFIG ---
 SUPABASE_URL = "https://elpwqqvgrdovocvkzgyl.supabase.co"
-# MAKE SURE TO PASTE YOUR KEY BELOW
 SUPABASE_KEY = "sb_publishable_6FBWrUK1dLH-AUGF7DMjRA_8Wyl3dRE"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="Scheddss Pro", page_icon="👟", layout="wide")
 
-# SAFETY CHEETS: Prevents the AttributeError you saw
+# SAFETY CHEETS
 if "master_queue" not in st.session_state:
     st.session_state.master_queue = {}  
 if "temp_comments" not in st.session_state:
@@ -30,16 +29,39 @@ if "reset_key" not in st.session_state:
 if "sc_reset_key" not in st.session_state:
     st.session_state.sc_reset_key = 0
 
-# --- AUTH LOGIC ---
+# --- AUTH LOGIC (FIXED) ---
 if "access_token" not in st.session_state:
-    if "token" in st.query_params:
-        st.session_state.access_token = st.query_params["token"]
+    # 1. Check if we are returning from FB with a code
+    if "code" in st.query_params:
+        auth_code = st.query_params["code"]
+        
+        # 2. Exchange code for token
+        token_url = "https://graph.facebook.com/v21.0/oauth/access_token"
+        token_params = {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI,
+            "code": auth_code,
+        }
+        
+        token_res = requests.get(token_url, params=token_params).json()
+        
+        if "access_token" in token_res:
+            st.session_state.access_token = token_res["access_token"]
+            st.query_params.clear() # Clean URL
+            st.rerun()
+        else:
+            st.error(f"Login Failed: {token_res.get('error', {}).get('message', 'Unknown error')}")
+            st.stop()
+    
+    # 3. No token? Show Login Button
     else:
         st.title("👟 Scheddss: Login")
         auth_url = f"https://www.facebook.com/v21.0/dialog/oauth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
         st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
         st.stop()
 
+# --- IF LOGGED IN, PROCEED ---
 user_token = st.session_state.access_token
 pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
 page_map = {p['name']: (p['id'], p['access_token']) for p in pages_res.get('data', [])}
@@ -404,3 +426,4 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
