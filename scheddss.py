@@ -13,7 +13,7 @@ st.set_page_config(page_title="Scheddss Pro", page_icon="👟", layout="wide")
 
 # Persistent Storage
 if "master_queue" not in st.session_state:
-    st.session_state.master_queue = {}  # Format: {id: {"type": "post", "comments": []}}
+    st.session_state.master_queue = {}  
 if "temp_comments" not in st.session_state:
     st.session_state.temp_comments = [""]
 if "smart_comments" not in st.session_state:
@@ -94,7 +94,7 @@ with tab1:
                 st.session_state.temp_comments = [""]
             else: st.error(str(res))
 
-# --- TAB 2: SMART COMMENTER (With AM/PM Scheduler) ---
+# --- TAB 2: SMART COMMENTER (With AM/PM Scheduler & Thumbnail) ---
 with tab2:
     st.subheader("💬 Bulk/Scheduled Comments on Live Posts")
     posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture&limit=10&access_token={target_token}"
@@ -105,6 +105,12 @@ with tab2:
         post_options = {p['id']: f"{p.get('message', 'Media')[:50]}..." for p in posts_data}
         sel_id = st.selectbox("1. Select Live Post:", options=list(post_options.keys()), format_func=lambda x: post_options[x])
         
+        # --- FIXED: THUMBNAIL PREVIEW ---
+        selected_post = next(p for p in posts_data if p['id'] == sel_id)
+        if selected_post.get('picture'):
+            st.image(selected_post['picture'], width=150, caption="Post Preview")
+        
+        st.divider()
         st.write("### 2. Prepare Comments")
         for i in range(len(st.session_state.smart_comments)):
             st.session_state.smart_comments[i] = st.text_area(f"Comment #{i+1}", value=st.session_state.smart_comments[i], key=f"sc_{i}")
@@ -137,7 +143,6 @@ with tab2:
                     requests.post(f"https://graph.facebook.com/v21.0/{sel_id}/comments", data={'message': msg, 'access_token': target_token})
                 st.success("Posted now!")
             else:
-                # We save this to the queue using a unique key
                 queue_id = f"comment_{sel_id}_{int(time.time())}"
                 st.session_state.master_queue[queue_id] = {
                     "type": "delayed_comment", 
@@ -148,14 +153,12 @@ with tab2:
                 st.success("Comment added to Scheduled Queue!")
             st.session_state.smart_comments = [""]
 
-# --- TAB 3: SCHEDULED QUEUE (Lists Posts AND Scheduled Comments) ---
+# --- TAB 3: SCHEDULED QUEUE ---
 with tab3:
     st.subheader("📅 Unified Management Queue")
-    # Fetch FB Posts
     q_url = f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}"
     fb_posts = requests.get(q_url).json().get('data', [])
 
-    # Display FB Scheduled Posts
     st.write("### 🚀 Scheduled Posts")
     for p in fb_posts:
         pid = p['id']
@@ -171,7 +174,6 @@ with tab3:
                 requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
                 st.rerun()
 
-    # Display Scheduled Comments (from Tab 2)
     st.write("### 💬 Independently Scheduled Comments")
     for qid, data in list(st.session_state.master_queue.items()):
         if data['type'] == "delayed_comment":
