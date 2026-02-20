@@ -153,35 +153,91 @@ with tab2:
                 st.success("Comment added to Scheduled Queue!")
             st.session_state.smart_comments = [""]
 
-# --- TAB 3: SCHEDULED QUEUE ---
+# --- TAB 3: SCHEDULED QUEUE (REBUILT) ---
 with tab3:
-    st.subheader("📅 Unified Management Queue")
-    q_url = f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}"
-    fb_posts = requests.get(q_url).json().get('data', [])
+    st.subheader("📅 Live Management Queue")
+    
+    # 1. FETCH FROM FACEBOOK (Standard Scheduled Posts)
+    # Using 'scheduled_posts' instead of 'promotable_posts' for better visibility
+    q_url = f"https://graph.facebook.com/v21.0/{target_id}/scheduled_posts?fields=id,message,scheduled_publish_time,picture,full_picture&access_token={target_token}"
+    
+    try:
+        q_res = requests.get(q_url).json()
+        fb_posts = q_res.get('data', [])
+    except:
+        fb_posts = []
+        st.error("Could not reach Facebook to fetch queue.")
 
-    st.write("### 🚀 Scheduled Posts")
-    for p in fb_posts:
-        pid = p['id']
-        with st.container(border=True):
-            lv = datetime.fromtimestamp(p['scheduled_publish_time']) + timedelta(hours=utc_offset)
-            st.write(f"⏰ **Post Live at:** `{lv.strftime('%I:%M %p')}`")
-            st.text_area("Caption", value=p.get('message', ''), key=f"q_p_{pid}")
-            if pid in st.session_state.master_queue:
-                st.write("💬 **Linked Comments:**")
-                for i, txt in enumerate(st.session_state.master_queue[pid]['comments']):
-                    st.session_state.master_queue[pid]['comments'][i] = st.text_input(f"C{i+1}", value=txt, key=f"q_pc_{pid}_{i}")
-            if st.button("🗑️ Delete Post", key=f"del_p_{pid}"):
-                requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
-                st.rerun()
+    st.write("### 🚀 Scheduled on Facebook")
+    if not fb_posts:
+        st.info("No scheduled posts found. Note: FB takes about 30-60 seconds to show new posts in the API.")
+    else:
+        for p in fb_posts:
+            pid = p['id']
+            with st.container(border=True):
+                col_text, col_img = st.columns([3, 1])
+                
+                # Time Math
+                target_ts = p['scheduled_publish_time']
+                lv = datetime.fromtimestamp(target_ts) + timedelta(hours=utc_offset)
+                now_ts = int(time.time())
+                mins_left = (target_ts - now_ts) // 60
+                
+                with col_text:
+                    st.markdown(f"🗓️ **Goes Live:** `{lv.strftime('%I:%M %p')}`")
+                    
+                    if mins_left > 0:
+                        st.caption(f"⏳ {mins_left} minutes remaining")
+                    else:
+                        st.warning("⚠️ Posting right now...")
 
-    st.write("### 💬 Independently Scheduled Comments")
+                    # EDIT OPTION
+                    new_cap = st.text_area("Edit Caption", value=p.get('message', ''), key=f"edit_cap_{pid}")
+                    
+                    # COMMENT MANAGEMENT
+                    if pid in st.session_state.master_queue:
+                        st.write("💬 **Linked Comments:**")
+                        comms = st.session_state.master_queue[pid]["comments"]
+                        for i, txt in enumerate(comms):
+                            comms[i] = st.text_input(f"C{i+1}", value=txt, key=f"edit_comm_{pid}_{i}")
+
+                    # ACTION BUTTONS
+                    btn_save, btn_del = st.columns(2)
+                    if btn_save.button("💾 Save Changes", key=f"sv_btn_{pid}"):
+                        update_url = f"https://graph.facebook.com/v21.0/{pid}"
+                        r = requests.post(update_url, data={'message': new_cap, 'access_token': target_token})
+                        if r.status_code == 200:
+                            st.success("Updated!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("FB error: Cannot edit too close to post time.")
+
+                    if btn_del.button("🗑️ Delete Post", key=f"del_btn_{pid}"):
+                        requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
+                        if pid in st.session_state.master_queue:
+                            del st.session_state.master_queue[pid]
+                        st.success("Deleted!")
+                        time.sleep(1)
+                        st.rerun()
+
+                with col_img:
+                    img_url = p.get('full_picture') or p.get('picture')
+                    if img_url:
+                        st.image(img_url, use_container_width=True)
+
+    st.divider()
+    # 2. INDEPENDENT COMMENTS QUEUE (The ones from Tab 2)
+    st.write("### 💬 Independent Comment Queue")
     for qid, data in list(st.session_state.master_queue.items()):
         if data['type'] == "delayed_comment":
             with st.container(border=True):
                 clv = datetime.fromtimestamp(data['scheduled_time']) + timedelta(hours=utc_offset)
-                st.write(f"⏰ **Comment Live at:** `{clv.strftime('%I:%M %p')}` | Post ID: `{data['parent_post']}`")
+                st.write(f"⏰ **Comment at:** `{clv.strftime('%I:%M %p')}` | Post: `{data['parent_post']}`")
+                
                 for idx, c_txt in enumerate(data['comments']):
-                    data['comments'][idx] = st.text_area(f"Comment {idx+1}", value=c_txt, key=f"q_dc_{qid}_{idx}")
-                if st.button("🗑️ Remove from Queue", key=f"del_q_{qid}"):
+                    data['comments'][idx] = st.text_area(f"Edit Comment {idx+1}", value=c_txt, key=f"edit_smart_{qid}_{idx}")
+                
+                if st.button("🗑️ Remove Comment", key=f"rem_q_{qid}"):
                     del st.session_state.master_queue[qid]
                     st.rerun()
