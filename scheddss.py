@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import time
 import re
 
-# --- 1. CONFIG & SETUP ---
+# --- 1. CONFIG ---
 CLIENT_ID = "910661605032071"
 CLIENT_SECRET = "a57ba995d5178d5ee80c3debba225138"
 REDIRECT_URI = "https://scheddss.streamlit.app/"
@@ -20,6 +20,7 @@ if "token" in st.query_params:
 elif "access_token" not in st.session_state:
     st.session_state.access_token = None
 
+# --- 3. AUTHENTICATION ---
 if st.session_state.access_token is None:
     if "code" in st.query_params:
         code = st.query_params["code"]
@@ -34,10 +35,14 @@ if st.session_state.access_token is None:
         st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
         st.stop()
 
-# --- 3. SIDEBAR SETTINGS (UTC & PAGE) ---
+# --- 4. DATA FETCHING ---
 user_token = st.session_state.access_token
-pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
-page_map = {p['name']: (p['id'], p['access_token']) for p in pages_res.get('data', [])}
+try:
+    pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
+    page_map = {p['name']: (p['id'], p['access_token']) for p in pages_res.get('data', [])}
+except:
+    st.error("Session expired. Please log in again.")
+    st.stop()
 
 with st.sidebar:
     st.header("⚙️ Settings")
@@ -46,13 +51,8 @@ with st.sidebar:
     
     st.divider()
     st.write("🌍 **Timezone Config**")
-    utc_offset = st.number_input("Your UTC Offset (e.g. Philippines is 8)", value=8, step=1)
-    st.caption(f"Current UTC Time: {datetime.now(timezone.utc).strftime('%H:%M')}")
-    
-    if st.button("Logout"):
-        st.query_params.clear()
-        st.session_state.access_token = None
-        st.rerun()
+    # Set to 8 for Philippines
+    utc_offset = st.number_input("UTC Offset (Hours)", value=8)
 
 tab1, tab2, tab3 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue"])
 
@@ -67,7 +67,7 @@ with tab1:
         if "new_comments" not in st.session_state: st.session_state.new_comments = [""]
         for i, val in enumerate(st.session_state.new_comments):
             st.session_state.new_comments[i] = st.text_area(f"Comment #{i+1}", value=val, key=f"nc_{i}", height=80)
-        if st.button("➕ Add Comment"):
+        if st.button("➕ Add Another Comment"):
             st.session_state.new_comments.append("")
             st.rerun()
 
@@ -76,44 +76,44 @@ with tab1:
         unix_time = None
         if timing == "Schedule":
             d = st.date_input("Select Date")
+            # TYPING TYPE TIME PICKER
             t_input = st.text_input("Type Time (24h format HH:MM)", value=datetime.now().strftime("%H:%M"))
             
-            # Validate typed time
             if re.match(r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", t_input):
                 h, m = map(int, t_input.split(":"))
-                # Logic: Convert local input to UTC based on your offset
                 local_dt = datetime.combine(d, datetime.min.time()).replace(hour=h, minute=m)
+                # Correct UTC math for Facebook
                 utc_dt = local_dt - timedelta(hours=utc_offset)
                 unix_time = int(utc_dt.timestamp())
-                st.success(f"✅ Will post at {t_input} (UTC{utc_offset:+} )")
+                st.success(f"✅ Ready: {t_input} (UTC{utc_offset:+} )")
             else:
-                st.error("❌ Use HH:MM format (e.g., 09:15 or 21:05)")
+                st.error("Invalid format. Use HH:MM")
 
-    if st.button("🚀 EXECUTE POST", use_container_width=True):
+    if st.button("🚀 EXECUTE", use_container_width=True):
         if uploaded_files:
-            with st.spinner("Pushing to Facebook..."):
-                file = uploaded_files[0]
-                is_vid = "video" in file.type
-                ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
-                payload = {'access_token': target_token, 'caption' if not is_vid else 'description': caption}
-                
-                if timing == "Schedule" and unix_time:
-                    payload.update({'published': 'false', 'scheduled_publish_time': unix_time})
-                
-                res = requests.post(ep, data=payload, files={'file': file.getvalue()}).json()
-                
-                if "id" in res:
-                    pid = res['id']
-                    st.session_state.master_queue[pid] = [c for c in st.session_state.new_comments if c.strip()]
-                    st.success(f"Done! Post ID: {pid}")
-                else:
-                    st.error(f"Error: {res}")
+            file = uploaded_files[0]
+            is_vid = "video" in file.type
+            ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
+            payload = {'access_token': target_token, 'caption' if not is_vid else 'description': caption}
+            
+            if timing == "Schedule" and unix_time:
+                payload.update({'published': 'false', 'scheduled_publish_time': unix_time})
+            
+            res = requests.post(ep, data=payload, files={'file': file.getvalue()}).json()
+            if "id" in res:
+                pid = res['id']
+                # Link comments to ID in memory
+                st.session_state.master_queue[pid] = [c for c in st.session_state.new_comments if c.strip()]
+                st.success(f"Success! Post ID: {pid}")
+            else:
+                st.error(str(res))
 
 # --- TAB 3: SCHEDULED QUEUE ---
 with tab3:
-    st.subheader("Upcoming Content")
+    st.subheader("Manage Upcoming Posts & Comments")
     q_url = f"https://graph.facebook.com/v21.0/{target_id}/promotable_posts?is_published=false&fields=id,message,scheduled_publish_time,picture&access_token={target_token}"
-    q_data = requests.get(q_url).json().get('data', [])
+    q_res = requests.get(q_url).json()
+    q_data = q_res.get('data', [])
 
     if not q_data:
         st.info("Queue is empty.")
@@ -123,25 +123,25 @@ with tab3:
             with st.container(border=True):
                 c1, c2 = st.columns([3, 1])
                 with c1:
-                    # Convert UTC back to local for display
-                    local_time = datetime.fromtimestamp(p['scheduled_publish_time']) + timedelta(hours=utc_offset)
-                    st.markdown(f"🗓️ **Scheduled for:** `{local_time.strftime('%Y-%m-%d %I:%M %p')}`")
+                    local_view = datetime.fromtimestamp(p['scheduled_publish_time']) + timedelta(hours=utc_offset)
+                    st.markdown(f"🗓️ **Scheduled for:** `{local_view.strftime('%Y-%m-%d %I:%M %p')}`")
                     
-                    new_cap = st.text_area("Caption", value=p.get('message', ''), key=f"q_cap_{pid}")
+                    new_cap = st.text_area("Caption", value=p.get('message', ''), key=f"q_cap_{pid}", height=100)
                     
-                    # Manage Queue Comments
+                    # Manage queue comments
                     q_comms = st.session_state.master_queue.get(pid, [])
                     if q_comms:
-                        st.write("💬 **Comments:**")
+                        st.write("💬 **Scheduled Comments:**")
                         for idx, txt in enumerate(q_comms):
-                            q_comms[idx] = st.text_area(f"C#{idx+1}", value=txt, key=f"q_edit_c_{pid}_{idx}", height=70)
+                            q_comms[idx] = st.text_area(f"C#{idx+1}", value=txt, key=f"q_c_{pid}_{idx}", height=70)
                     
-                    if st.button("💾 Save All", key=f"sv_{pid}"):
+                    b_sv, b_del = st.columns(2)
+                    if b_sv.button("💾 Save Changes", key=f"sv_{pid}"):
                         requests.post(f"https://graph.facebook.com/v21.0/{pid}", data={'message': new_cap, 'access_token': target_token})
                         st.session_state.master_queue[pid] = q_comms
                         st.rerun()
                     
-                    if st.button("🗑️ Delete", key=f"del_{pid}"):
+                    if b_del.button("🗑️ Delete Everything", key=f"del_{pid}"):
                         requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
                         if pid in st.session_state.master_queue: del st.session_state.master_queue[pid]
                         st.rerun()
