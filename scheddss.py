@@ -29,13 +29,13 @@ if "reset_key" not in st.session_state:
 if "sc_reset_key" not in st.session_state:
     st.session_state.sc_reset_key = 0
 
-# --- AUTH LOGIC ---
+# --- AUTH LOGIC (PERSISTENT STYLE) ---
 if "access_token" not in st.session_state:
-    # Check if 'code' is in the URL
+    # 1. Check if we just got a code back from Facebook
     if "code" in st.query_params:
         auth_code = st.query_params["code"]
         
-        # Exchange code for token
+        # Exchange code for a SHORT-LIVED token
         token_url = "https://graph.facebook.com/v21.0/oauth/access_token"
         token_params = {
             "client_id": CLIENT_ID,
@@ -47,21 +47,37 @@ if "access_token" not in st.session_state:
         token_res = requests.get(token_url, params=token_params).json()
         
         if "access_token" in token_res:
-            st.session_state.access_token = token_res["access_token"]
-            # CLEAR URL immediately to prevent "Code Expired" on refresh
+            short_token = token_res["access_token"]
+            
+            # 2. UPGRADE TO LONG-LIVED TOKEN (Lasts 60 Days)
+            # This is the "Magic" that keeps you logged in longer
+            upgrade_url = "https://graph.facebook.com/v21.0/oauth/access_token"
+            upgrade_params = {
+                "grant_type": "fb_exchange_token",
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "fb_exchange_token": short_token
+            }
+            long_res = requests.get(upgrade_url, params=upgrade_params).json()
+            
+            # Use the long token if we got it, otherwise use the short one
+            st.session_state.access_token = long_res.get("access_token", short_token)
+            
             st.query_params.clear() 
             st.rerun()
         else:
-            # If the code is expired, just clear it and show the login button again
             st.query_params.clear()
-            st.warning("Session expired. Please click login again.")
+            st.warning("Session issue. Please login again.")
             st.stop()
     
-    # Show Login Button
+    # 3. If no token and no code, show the button
     else:
         st.title("👟 Scheddss: Login")
+        # Added 'auth_type=rerequest' to ensure permissions stick
         auth_url = f"https://www.facebook.com/v21.0/dialog/oauth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
+        
         st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
+        st.info("Note: Refreshing the browser tab will require a quick re-click of the login button due to Streamlit security.")
         st.stop()
 
 # --- APP START ---
@@ -432,5 +448,6 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
 
 
