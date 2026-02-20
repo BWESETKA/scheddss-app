@@ -13,7 +13,7 @@ REDIRECT_URI = "https://scheddss.streamlit.app/"
 # --- SUPABASE CONFIG ---
 SUPABASE_URL = "https://elpwqqvgrdovocvkzgyl.supabase.co"
 # MAKE SURE TO PASTE YOUR KEY BELOW
-SUPABASE_KEY = "sb_publishable_6FBWrUK1dLH-AUGF7DMjRA_8Wyl3dRE" 
+SUPABASE_KEY = "sb_publishable_6FBWrUK1dLH-AUGF7DMjRA_8Wyl3dRE"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="Scheddss Pro", page_icon="👟", layout="wide")
@@ -88,7 +88,7 @@ with tab1:
                 h, m = map(int, p_t_str.split(":"))
                 if p_ampm == "PM" and h < 12: h += 12
                 elif p_ampm == "AM" and h == 12: h = 0
-                dt = datetime.combine(p_d, datetime.min.time()).replace(hour=h, minute=sm)
+                dt = datetime.combine(p_d, datetime.min.time()).replace(hour=h, minute=m)
                 p_unix = int((dt - timedelta(hours=utc_offset)).timestamp())
             except: st.error("Time format error.")
 
@@ -126,7 +126,6 @@ with tab1:
                                 supabase.table("comment_queue").insert({
                                     "parent_post_id": post_id,
                                     "comment_text": msg,
-                                    # If immediate, we still put a small delay so FB has time to process the post
                                     "scheduled_time": p_unix if timing == "Schedule" else int(time.time() + 30),
                                     "page_access_token": target_token,
                                     "status": "pending"
@@ -401,4 +400,5 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
 
