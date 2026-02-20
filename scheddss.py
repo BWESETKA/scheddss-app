@@ -38,15 +38,26 @@ with st.sidebar:
 
 tab1, tab2, tab3 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue"])
 
-# --- TAB 1: NEW POST (UNLIMITED MEDIA FIX) ---
+# --- TAB 1: NEW POST (WITH AUTO-RESET) ---
 with tab1:
+    # We use a 'form_reset' counter in session_state to force-clear the file uploader
+    if "reset_key" not in st.session_state:
+        st.session_state.reset_key = 0
+
     col1, col2 = st.columns(2)
     with col1:
-        # FIXED: Removed specific numbers. User can pick any amount.
-        uploaded_files = st.file_uploader("Upload Media (Photos/Videos)", accept_multiple_files=True)
-        caption = st.text_area("Caption (# & Links OK)", height=150)
+        # The key=f"uploader_{st.session_state.reset_key}" is the trick to reset the picker
+        uploaded_files = st.file_uploader(
+            "Upload Media (Photos/Videos)", 
+            accept_multiple_files=True, 
+            key=f"uploader_{st.session_state.reset_key}"
+        )
+        
+        caption = st.text_area("Caption (# & Links OK)", height=150, key=f"cap_{st.session_state.reset_key}")
+        
         for i in range(len(st.session_state.temp_comments)):
-            st.session_state.temp_comments[i] = st.text_area(f"Comment #{i+1}", value=st.session_state.temp_comments[i], key=f"t1_c_{i}")
+            st.session_state.temp_comments[i] = st.text_area(f"Comment #{i+1}", value=st.session_state.temp_comments[i], key=f"t1_c_{i}_{st.session_state.reset_key}")
+        
         if st.button("➕ Add Comment"):
             st.session_state.temp_comments.append("")
             st.rerun()
@@ -59,6 +70,7 @@ with tab1:
             t_col, ap_col = st.columns(2)
             p_t_str = t_col.text_input("Time (HH:MM)", value="12:00")
             p_ampm = ap_col.selectbox("AM/PM", ["AM", "PM"])
+            
             h, m = map(int, p_t_str.split(":"))
             if p_ampm == "PM" and h < 12: h += 12
             elif p_ampm == "AM" and h == 12: h = 0
@@ -66,33 +78,42 @@ with tab1:
             p_unix = int((dt - timedelta(hours=utc_offset)).timestamp())
 
     if st.button("🚀 EXECUTE POST", use_container_width=True, type="primary"):
-        with st.spinner("Processing Media..."):
-            media_ids = []
-            for f in uploaded_files:
-                is_vid = "video" in f.type
-                ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
-                res = requests.post(ep, data={'access_token': target_token, 'published': 'false'}, files={'file': f.getvalue()}).json()
-                if "id" in res: media_ids.append(res['id'])
-            
-            post_payload = {
-                'message': caption,
-                'access_token': target_token,
-                'attached_media': json.dumps([{'media_fbid': i} for i in media_ids])
-            }
-            if timing == "Schedule":
-                post_payload.update({'published': 'false', 'scheduled_publish_time': p_unix})
-            
-            final = requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data=post_payload).json()
-            if "id" in final:
-                # Save to Master Queue for Tab 3 visibility
-                st.session_state.master_queue[final['id']] = {
-                    "comments": [c for c in st.session_state.temp_comments if c.strip()],
-                    "caption": caption,
-                    "media_count": len(media_ids)
+        if not uploaded_files:
+            st.error("Please select media first.")
+        else:
+            with st.spinner("Processing Media..."):
+                media_ids = []
+                for f in uploaded_files:
+                    is_vid = "video" in f.type
+                    ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
+                    res = requests.post(ep, data={'access_token': target_token, 'published': 'false'}, files={'file': f.getvalue()}).json()
+                    if "id" in res: media_ids.append(res['id'])
+                
+                post_payload = {
+                    'message': caption,
+                    'access_token': target_token,
+                    'attached_media': json.dumps([{'media_fbid': i} for i in media_ids])
                 }
-                st.success("Post Created!")
-                time.sleep(2)
-                st.rerun()
+                if timing == "Schedule":
+                    post_payload.update({'published': 'false', 'scheduled_publish_time': p_unix})
+                
+                final = requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data=post_payload).json()
+                
+                if "id" in final:
+                    # 1. SAVE TO MASTER QUEUE (TAB 3 VISIBILITY)
+                    st.session_state.master_queue[final['id']] = {
+                        "comments": [c for c in st.session_state.temp_comments if c.strip()],
+                        "caption": caption
+                    }
+                    
+                    st.success("Post Successfully Created!")
+                    
+                    # 2. THE RESET LOGIC (Clears the UI for next post)
+                    st.session_state.temp_comments = [""] # Reset comments list
+                    st.session_state.reset_key += 1       # Change key to force clear file picker and text areas
+                    
+                    time.sleep(2)
+                    st.rerun() # Refresh page back to clean state
 
 # --- TAB 2: SMART COMMENTER (COMPLETE) ---
 with tab2:
@@ -361,3 +382,4 @@ with tab3:
                 if col_del_q.button("🗑️ Remove from Queue", key=f"rm_q_{qid}"):
                     del st.session_state.master_queue[qid]
                     st.rerun()
+
