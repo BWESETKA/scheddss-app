@@ -56,7 +56,7 @@ with st.sidebar:
 
 tab1, tab2, tab3 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue"])
 
-# --- TAB 1: NEW POST ---
+# --- TAB 1: NEW POST (SUPABASE CONNECTED) ---
 with tab1:
     col1, col2 = st.columns(2)
     with col1:
@@ -88,7 +88,7 @@ with tab1:
                 h, m = map(int, p_t_str.split(":"))
                 if p_ampm == "PM" and h < 12: h += 12
                 elif p_ampm == "AM" and h == 12: h = 0
-                dt = datetime.combine(p_d, datetime.min.time()).replace(hour=h, minute=m)
+                dt = datetime.combine(p_d, datetime.min.time()).replace(hour=h, minute=sm)
                 p_unix = int((dt - timedelta(hours=utc_offset)).timestamp())
             except: st.error("Time format error.")
 
@@ -109,27 +109,45 @@ with tab1:
                     'access_token': target_token,
                     'attached_media': json.dumps([{'media_fbid': i} for i in media_ids])
                 }
+                
                 if timing == "Schedule":
                     post_payload.update({'published': 'false', 'scheduled_publish_time': p_unix})
                 
                 final = requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data=post_payload).json()
                 
                 if "id" in final:
-                    st.session_state.master_queue[final['id']] = {
-                        "comments": [c for c in st.session_state.temp_comments if c.strip()],
-                        "caption": caption
-                    }
-                    st.success("Post Successfully Created!")
+                    post_id = final['id']
+                    valid_comments = [c for c in st.session_state.temp_comments if c.strip()]
+                    
+                    # --- CLOUD SYNC FOR COMMENTS ---
+                    if valid_comments:
+                        try:
+                            for msg in valid_comments:
+                                supabase.table("comment_queue").insert({
+                                    "parent_post_id": post_id,
+                                    "comment_text": msg,
+                                    # If immediate, we still put a small delay so FB has time to process the post
+                                    "scheduled_time": p_unix if timing == "Schedule" else int(time.time() + 30),
+                                    "page_access_token": target_token,
+                                    "status": "pending"
+                                }).execute()
+                        except Exception as e:
+                            st.warning(f"Post created, but comments failed to cloud-sync: {e}")
+
+                    st.success("Post & Comments Secured in Cloud!")
                     st.session_state.temp_comments = [""] 
-                    st.session_state.reset_key += 1 # Reset Tab 1 UI
+                    st.session_state.reset_key += 1 
                     time.sleep(2)
                     st.rerun()
+                else:
+                    st.error(f"Post failed: {final}")
 
-# --- TAB 2: SMART COMMENTER ---
+# --- TAB 2: SMART COMMENTER (COMPLETE) ---
 with tab2:
     st.subheader("💬 Smart Commenter")
     st.markdown("---")
 
+    # 1. FETCH PUBLISHED POSTS
     posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture,created_time&limit=10&access_token={target_token}"
     
     try:
@@ -140,6 +158,7 @@ with tab2:
     if not posts_data:
         st.info("No published posts found.")
     else:
+        # 2. SELECT POST TO COMMENT ON
         post_options = {p['id']: f"{p.get('message', 'Media Post')[:50]}..." for p in posts_data}
         selected_post_id = st.selectbox(
             "🎯 Select a Post:", 
@@ -154,6 +173,7 @@ with tab2:
 
         st.divider()
 
+        # 3. INPUT MULTIPLE COMMENTS
         st.write("### 📝 Your Comments")
         for i in range(len(st.session_state.smart_comments)):
             st.session_state.smart_comments[i] = st.text_area(
@@ -174,6 +194,7 @@ with tab2:
 
         st.divider()
 
+        # 4. TIMING LOGIC
         st.write("### ⏰ Set Timing")
         sc_timing_mode = st.radio("When to post?", ["Immediately", "Schedule for Later"], horizontal=True, key=f"sc_mode_{st.session_state.sc_reset_key}")
 
@@ -190,30 +211,41 @@ with tab2:
                 elif sc_ampm == "AM" and sh == 12: sh = 0
                 sc_dt = datetime.combine(sc_date, datetime.min.time()).replace(hour=sh, minute=sm)
                 sc_unix = int((sc_dt - timedelta(hours=utc_offset)).timestamp())
-            except: st.error("Format HH:MM required.")
+            except: 
+                st.error("Format HH:MM required.")
 
+        # 5. EXECUTION (DATABASE SYNC)
         if st.button("🚀 EXECUTE SMART COMMENTS", use_container_width=True, type="primary"):
             valid_comments = [c.strip() for c in st.session_state.smart_comments if c.strip()]
+            
             if not valid_comments:
                 st.error("Please type a comment.")
             else:
                 with st.spinner("Processing..."):
                     if sc_timing_mode == "Immediately":
                         for msg in valid_comments:
-                            requests.post(f"https://graph.facebook.com/v21.0/{selected_post_id}/comments", data={'message': msg, 'access_token': target_token})
+                            requests.post(f"https://graph.facebook.com/v21.0/{selected_post_id}/comments", 
+                                          data={'message': msg, 'access_token': target_token})
                         st.success("Comments posted immediately!")
                     else:
-                        batch_id = f"sc_{int(time.time())}"
-                        st.session_state.master_queue[batch_id] = {
-                            "type": "delayed_comment",
-                            "parent_post": selected_post_id,
-                            "comments": valid_comments,
-                            "scheduled_time": sc_unix
-                        }
-                        st.success("Comments scheduled!")
+                        # --- CLOUD SAVE LOGIC ---
+                        # We save each comment line as a separate row in Supabase
+                        try:
+                            for msg in valid_comments:
+                                supabase.table("comment_queue").insert({
+                                    "parent_post_id": selected_post_id,
+                                    "comment_text": msg,
+                                    "scheduled_time": sc_unix,
+                                    "page_access_token": target_token,
+                                    "status": "pending"
+                                }).execute()
+                            st.success("Comments saved to Cloud Database!")
+                        except Exception as e:
+                            st.error(f"Cloud Save Failed: {e}")
                     
+                    # Reset UI after success
                     st.session_state.smart_comments = [""]
-                    st.session_state.sc_reset_key += 1 # Reset Tab 2 UI
+                    st.session_state.sc_reset_key += 1 
                     time.sleep(2)
                     st.rerun()
 
@@ -221,7 +253,7 @@ with tab2:
 with tab3:
     st.subheader("📅 Live Management Queue")
     
-    # 1. FETCH LIVE DATA FROM FACEBOOK
+    # 1. FETCH LIVE DATA FROM FACEBOOK (FOR POSTS)
     q_url = f"https://graph.facebook.com/v21.0/{target_id}/scheduled_posts?fields=id,message,scheduled_publish_time,full_picture&access_token={target_token}"
     try:
         fb_posts = requests.get(q_url).json().get('data', [])
@@ -256,13 +288,11 @@ with tab3:
                     e_btn = st.button("📝 Edit Details", key=f"edit_ui_{pid}")
                     d_btn = st.button("🗑️ Delete Post", key=f"del_ui_{pid}", type="secondary")
 
-                # --- DELETE LOGIC ---
+                # --- DELETE LOGIC (POSTS) ---
                 if d_btn:
                     with st.spinner("Deleting..."):
                         del_res = requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}").json()
                         if del_res.get("success"):
-                            if pid in st.session_state.master_queue: 
-                                del st.session_state.master_queue[pid]
                             st.success("Post Deleted.")
                             time.sleep(1)
                             st.rerun()
@@ -279,16 +309,8 @@ with tab3:
                         up_time_str = t1.text_input("Time (HH:MM)", value=lv.strftime("%I:%M"), key=f"up_time_{pid}")
                         up_ampm = t2.selectbox("AM/PM", ["AM", "PM"], index=0 if lv.strftime("%p")=="AM" else 1, key=f"up_ap_{pid}")
                         
-                        st.write("**Edit Linked Comments:**")
-                        if pid in st.session_state.master_queue:
-                            coms = st.session_state.master_queue[pid]['comments']
-                            for i in range(len(coms)):
-                                coms[i] = st.text_area(f"Comment {i+1}", value=coms[i], key=f"up_com_{pid}_{i}")
-                        else:
-                            st.caption("No linked comments found.")
-
                         if st.button("💾 SAVE & RE-SYNC TO FACEBOOK", key=f"save_all_{pid}", type="primary"):
-                            with st.spinner("Updating Facebook..."):
+                            with st.spinner("Updating..."):
                                 h, m = map(int, up_time_str.split(":"))
                                 if up_ampm == "PM" and h < 12: h += 12
                                 elif up_ampm == "AM" and h == 12: h = 0
@@ -304,25 +326,19 @@ with tab3:
                                         res = requests.post(ep, data={'access_token': target_token, 'published': 'false'}, files={'file': f.getvalue()}).json()
                                         if "id" in res: new_mids.append(res['id'])
                                     
-                                    new_post = requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data={
+                                    requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data={
                                         'message': up_caption,
                                         'access_token': target_token,
                                         'attached_media': json.dumps([{'media_fbid': i} for i in new_mids]),
                                         'published': 'false',
                                         'scheduled_publish_time': up_unix
-                                    }).json()
-                                    
-                                    if "id" in new_post:
-                                        st.session_state.master_queue[new_post['id']] = {"comments": coms}
-                                        if pid in st.session_state.master_queue: del st.session_state.master_queue[pid]
+                                    })
                                 else:
                                     requests.post(f"https://graph.facebook.com/v21.0/{pid}", data={
                                         'message': up_caption,
                                         'scheduled_publish_time': up_unix,
                                         'access_token': target_token
                                     })
-                                    if pid in st.session_state.master_queue:
-                                        st.session_state.master_queue[pid]['comments'] = coms
 
                                 st.success("Changes Saved!")
                                 st.session_state[f"active_ed_{pid}"] = False
@@ -333,46 +349,55 @@ with tab3:
                             st.session_state[f"active_ed_{pid}"] = False
                             st.rerun()
 
-    # 2. INDEPENDENT SMART COMMENT QUEUE
+    # 2. INDEPENDENT SMART COMMENT QUEUE (POWERED BY SUPABASE)
     st.divider()
-    st.write("### 💬 Independent Comment Queue")
+    st.write("### 💬 Independent Comment Queue (Cloud)")
     
-    for qid, data in list(st.session_state.master_queue.items()):
-        if data.get('type') == "delayed_comment":
+    # FETCH PENDING COMMENTS FROM DATABASE
+    try:
+        res = supabase.table("comment_queue").select("*").eq("status", "pending").execute()
+        cloud_comments = res.data
+    except:
+        cloud_comments = []
+
+    if not cloud_comments:
+        st.info("No scheduled comments found in the cloud.")
+    else:
+        for item in cloud_comments:
+            cid = item['id']
             with st.container(border=True):
                 c_col_info, c_col_btns = st.columns([4, 2])
                 
-                clv = datetime.fromtimestamp(data['scheduled_time']) + timedelta(hours=utc_offset)
+                clv = datetime.fromtimestamp(item['scheduled_time']) + timedelta(hours=utc_offset)
                 
                 with c_col_info:
                     st.markdown(f"⏰ **Comment at:** `{clv.strftime('%I:%M %p - %b %d')}`")
-                    st.caption(f"Parent Post ID: `{data['parent_post']}`")
+                    st.caption(f"Parent Post ID: `{item['parent_post_id']}`")
+                    st.markdown(f"📝 **Text:** {item['comment_text'][:50]}...")
                 
                 with c_col_btns:
-                    # Edit toggle for the independent comments
-                    sc_edit_btn = st.button("📝 Edit Comments", key=f"sc_edit_btn_{qid}")
-                    sc_del_btn = st.button("🗑️ Remove", key=f"sc_del_btn_{qid}", type="secondary")
+                    sc_edit_btn = st.button("📝 Edit", key=f"sc_edit_btn_{cid}")
+                    sc_del_btn = st.button("🗑️ Remove", key=f"sc_del_btn_{cid}", type="secondary")
 
-                # Remove Logic
+                # --- DELETE COMMENT LOGIC ---
                 if sc_del_btn:
-                    del st.session_state.master_queue[qid]
+                    supabase.table("comment_queue").delete().eq("id", cid).execute()
                     st.rerun()
 
-                # Edit Logic (Hidden by default)
-                if sc_edit_btn or st.session_state.get(f"active_sc_ed_{qid}"):
-                    st.session_state[f"active_sc_ed_{qid}"] = True
+                # --- EDIT COMMENT LOGIC ---
+                if sc_edit_btn or st.session_state.get(f"active_sc_ed_{cid}"):
+                    st.session_state[f"active_sc_ed_{cid}"] = True
                     with st.expander("📝 Edit Comment Content", expanded=True):
-                        for i, txt in enumerate(data['comments']):
-                            data['comments'][i] = st.text_area(f"Line {i+1}", value=txt, key=f"q_ed_{qid}_{i}")
+                        new_txt = st.text_area("Comment Text", value=item['comment_text'], key=f"q_ed_txt_{cid}")
                         
                         col_sc_save, col_sc_can = st.columns(2)
-                        if col_sc_save.button("💾 Save Changes", key=f"sv_sc_{qid}", type="primary"):
-                            st.success("Comment updated in queue!")
-                            st.session_state[f"active_sc_ed_{qid}"] = False
+                        if col_sc_save.button("💾 Save Changes", key=f"sv_sc_{cid}", type="primary"):
+                            supabase.table("comment_queue").update({"comment_text": new_txt}).eq("id", cid).execute()
+                            st.success("Updated!")
+                            st.session_state[f"active_sc_ed_{cid}"] = False
                             time.sleep(1)
                             st.rerun()
                             
-                        if col_sc_can.button("✖️ Close", key=f"can_sc_{qid}"):
-                            st.session_state[f"active_sc_ed_{qid}"] = False
+                        if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
+                            st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
-
