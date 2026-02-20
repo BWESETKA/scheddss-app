@@ -29,13 +29,24 @@ if "reset_key" not in st.session_state:
 if "sc_reset_key" not in st.session_state:
     st.session_state.sc_reset_key = 0
 
-# --- AUTH LOGIC (PERSISTENT STYLE) ---
+# --- PERSISTENT AUTH LOGIC ---
+
+@st.cache_resource
+def get_stored_token():
+    """Custom cache to keep the token alive across refreshes"""
+    return {"token": None}
+
+session_cache = get_stored_token()
+
+# 1. If we already have a token in the cache, put it in session_state
+if session_cache["token"] and "access_token" not in st.session_state:
+    st.session_state.access_token = session_cache["token"]
+
+# 2. Check if we are logging in for the first time
 if "access_token" not in st.session_state:
-    # 1. Check if we just got a code back from Facebook
     if "code" in st.query_params:
         auth_code = st.query_params["code"]
         
-        # Exchange code for a SHORT-LIVED token
         token_url = "https://graph.facebook.com/v21.0/oauth/access_token"
         token_params = {
             "client_id": CLIENT_ID,
@@ -47,59 +58,24 @@ if "access_token" not in st.session_state:
         token_res = requests.get(token_url, params=token_params).json()
         
         if "access_token" in token_res:
-            short_token = token_res["access_token"]
-            
-            # 2. UPGRADE TO LONG-LIVED TOKEN (Lasts 60 Days)
-            # This is the "Magic" that keeps you logged in longer
-            upgrade_url = "https://graph.facebook.com/v21.0/oauth/access_token"
-            upgrade_params = {
-                "grant_type": "fb_exchange_token",
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "fb_exchange_token": short_token
-            }
-            long_res = requests.get(upgrade_url, params=upgrade_params).json()
-            
-            # Use the long token if we got it, otherwise use the short one
-            st.session_state.access_token = long_res.get("access_token", short_token)
+            # Store it in both places so refresh doesn't kill it
+            st.session_state.access_token = token_res["access_token"]
+            session_cache["token"] = token_res["access_token"]
             
             st.query_params.clear() 
             st.rerun()
         else:
             st.query_params.clear()
-            st.warning("Session issue. Please login again.")
+            st.warning("Login failed. Try again.")
             st.stop()
-    
-    # 3. If no token and no code, show the button
+            
     else:
+        # Show Login Button only if we have ZERO tokens saved
         st.title("👟 Scheddss: Login")
-        # Added 'auth_type=rerequest' to ensure permissions stick
         auth_url = f"https://www.facebook.com/v21.0/dialog/oauth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
-        
         st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
-        st.info("Note: Refreshing the browser tab will require a quick re-click of the login button due to Streamlit security.")
         st.stop()
-
-# --- APP START ---
-user_token = st.session_state.access_token
-pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
-page_map = {p['name']: (p['id'], p['access_token']) for p in pages_res.get('data', [])}
-
-with st.sidebar:
-    st.header("⚙️ Settings")
-    if page_map:
-        selected_page_name = st.selectbox("Target Page", list(page_map.keys()))
-        target_id, target_token = page_map[selected_page_name]
-    else:
-        st.error("No pages found or token expired.")
-        if st.button("🔄 Re-login"):
-            del st.session_state.access_token
-            st.rerun()
-        st.stop()
-    utc_offset = st.number_input("UTC Offset (PH is 8)", value=8)
-
-tab1, tab2, tab3 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue"])
-
+        
 # --- TAB 1: NEW POST (SUPABASE CONNECTED) ---
 with tab1:
     col1, col2 = st.columns(2)
@@ -448,6 +424,7 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
 
 
 
