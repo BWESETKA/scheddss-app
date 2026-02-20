@@ -29,13 +29,13 @@ if "reset_key" not in st.session_state:
 if "sc_reset_key" not in st.session_state:
     st.session_state.sc_reset_key = 0
 
-# --- AUTH LOGIC (FIXED) ---
+# --- AUTH LOGIC ---
 if "access_token" not in st.session_state:
-    # 1. Check if we are returning from FB with a code
+    # Check if 'code' is in the URL
     if "code" in st.query_params:
         auth_code = st.query_params["code"]
         
-        # 2. Exchange code for token
+        # Exchange code for token
         token_url = "https://graph.facebook.com/v21.0/oauth/access_token"
         token_params = {
             "client_id": CLIENT_ID,
@@ -48,20 +48,23 @@ if "access_token" not in st.session_state:
         
         if "access_token" in token_res:
             st.session_state.access_token = token_res["access_token"]
-            st.query_params.clear() # Clean URL
+            # CLEAR URL immediately to prevent "Code Expired" on refresh
+            st.query_params.clear() 
             st.rerun()
         else:
-            st.error(f"Login Failed: {token_res.get('error', {}).get('message', 'Unknown error')}")
+            # If the code is expired, just clear it and show the login button again
+            st.query_params.clear()
+            st.warning("Session expired. Please click login again.")
             st.stop()
     
-    # 3. No token? Show Login Button
+    # Show Login Button
     else:
         st.title("👟 Scheddss: Login")
         auth_url = f"https://www.facebook.com/v21.0/dialog/oauth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
         st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
         st.stop()
 
-# --- IF LOGGED IN, PROCEED ---
+# --- APP START ---
 user_token = st.session_state.access_token
 pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
 page_map = {p['name']: (p['id'], p['access_token']) for p in pages_res.get('data', [])}
@@ -72,7 +75,10 @@ with st.sidebar:
         selected_page_name = st.selectbox("Target Page", list(page_map.keys()))
         target_id, target_token = page_map[selected_page_name]
     else:
-        st.error("No pages found.")
+        st.error("No pages found or token expired.")
+        if st.button("🔄 Re-login"):
+            del st.session_state.access_token
+            st.rerun()
         st.stop()
     utc_offset = st.number_input("UTC Offset (PH is 8)", value=8)
 
@@ -426,4 +432,5 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
 
