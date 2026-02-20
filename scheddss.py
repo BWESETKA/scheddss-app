@@ -38,27 +38,34 @@ with st.sidebar:
 
 tab1, tab2, tab3 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue"])
 
-# --- TAB 1: NEW POST (WITH AUTO-RESET) ---
+# --- TAB 1: NEW POST (RESET READY + LINK SUPPORT) ---
 with tab1:
-    # We use a 'form_reset' counter in session_state to force-clear the file uploader
     if "reset_key" not in st.session_state:
         st.session_state.reset_key = 0
 
     col1, col2 = st.columns(2)
     with col1:
-        # The key=f"uploader_{st.session_state.reset_key}" is the trick to reset the picker
         uploaded_files = st.file_uploader(
-            "Upload Media (Photos/Videos)", 
+            "Upload Post Media", 
             accept_multiple_files=True, 
             key=f"uploader_{st.session_state.reset_key}"
         )
         
-        caption = st.text_area("Caption (# & Links OK)", height=150, key=f"cap_{st.session_state.reset_key}")
+        caption = st.text_area("Post Caption", height=150, key=f"cap_{st.session_state.reset_key}")
+        
+        st.markdown("---")
+        st.write("### 💬 Auto-Comments (Text & Links)")
+        st.caption("Note: FB API doesn't support direct file uploads in comments. Paste links to images/vids below!")
         
         for i in range(len(st.session_state.temp_comments)):
-            st.session_state.temp_comments[i] = st.text_area(f"Comment #{i+1}", value=st.session_state.temp_comments[i], key=f"t1_c_{i}_{st.session_state.reset_key}")
+            st.session_state.temp_comments[i] = st.text_area(
+                f"Comment #{i+1}", 
+                value=st.session_state.temp_comments[i], 
+                key=f"t1_c_{i}_{st.session_state.reset_key}",
+                placeholder="Paste text, hashtags, or image links here..."
+            )
         
-        if st.button("➕ Add Comment"):
+        if st.button("➕ Add Comment Line"):
             st.session_state.temp_comments.append("")
             st.rerun()
 
@@ -81,7 +88,7 @@ with tab1:
         if not uploaded_files:
             st.error("Please select media first.")
         else:
-            with st.spinner("Processing Media..."):
+            with st.spinner("Processing..."):
                 media_ids = []
                 for f in uploaded_files:
                     is_vid = "video" in f.type
@@ -100,123 +107,117 @@ with tab1:
                 final = requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data=post_payload).json()
                 
                 if "id" in final:
-                    # 1. SAVE TO MASTER QUEUE (TAB 3 VISIBILITY)
                     st.session_state.master_queue[final['id']] = {
                         "comments": [c for c in st.session_state.temp_comments if c.strip()],
                         "caption": caption
                     }
                     
-                    st.success("Post Successfully Created!")
+                    st.balloons() # Added a little 'Success' celebration!
+                    st.success("Success! UI will reset in 2 seconds...")
                     
-                    # 2. THE RESET LOGIC (Clears the UI for next post)
-                    st.session_state.temp_comments = [""] # Reset comments list
-                    st.session_state.reset_key += 1       # Change key to force clear file picker and text areas
+                    # RESET EVERYTHING
+                    st.session_state.temp_comments = [""] 
+                    st.session_state.reset_key += 1       
                     
                     time.sleep(2)
-                    st.rerun() # Refresh page back to clean state
+                    st.rerun()
 
-# --- TAB 2: SMART COMMENTER (COMPLETE) ---
+# --- TAB 2: SMART COMMENTER (COMPLETE & AUTO-RESET) ---
 with tab2:
+    # Logic to force a clean slate after success
+    if "sc_reset_key" not in st.session_state:
+        st.session_state.sc_reset_key = 0
+
     st.subheader("💬 Smart Commenter")
     st.markdown("---")
 
-    # 1. FETCH LIVE POSTS WITH THUMBNAILS
-    # Using 'full_picture' ensures the thumbnail actually shows up
+    # 1. FETCH LIVE POSTS
     posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture,created_time&limit=10&access_token={target_token}"
     
     try:
         posts_data = requests.get(posts_url).json().get('data', [])
     except:
         posts_data = []
-        st.error("Failed to fetch posts from Facebook.")
+        st.error("Failed to fetch posts.")
 
     if not posts_data:
-        st.info("No published posts found on this page.")
+        st.info("No published posts found.")
     else:
-        # Create a selection list
-        post_options = {p['id']: f"{p.get('message', 'Media Post')[:50]}... ({p['id']})" for p in posts_data}
-        selected_post_id = st.selectbox("🎯 Select a Post to Comment On:", 
-                                        options=list(post_options.keys()), 
-                                        format_func=lambda x: post_options[x])
+        # We use the reset_key in the selectbox to reset selection after execute
+        post_options = {p['id']: f"{p.get('message', 'Media Post')[:50]}..." for p in posts_data}
+        selected_post_id = st.selectbox(
+            "🎯 Select a Post to Comment On:", 
+            options=list(post_options.keys()), 
+            format_func=lambda x: post_options[x],
+            key=f"sc_post_sel_{st.session_state.sc_reset_key}"
+        )
 
-        # Show Thumbnail of selected post
         selected_item = next(p for p in posts_data if p['id'] == selected_post_id)
         if selected_item.get('full_picture'):
-            st.image(selected_item['full_picture'], width=300, caption="Selected Post Preview")
+            st.image(selected_item['full_picture'], width=300)
 
         st.divider()
 
         # 2. MULTIPLE COMMENT INPUTS
         st.write("### 📝 Your Comments")
-        if "smart_comments" not in st.session_state:
+        # Ensure we always have at least one box
+        if not st.session_state.smart_comments:
             st.session_state.smart_comments = [""]
 
-        # Loop through comments in session state
         for i in range(len(st.session_state.smart_comments)):
             st.session_state.smart_comments[i] = st.text_area(
-                f"Comment Line #{i+1} (Links & #Hashtags OK)", 
+                f"Comment Line #{i+1}", 
                 value=st.session_state.smart_comments[i], 
-                key=f"sc_input_{i}",
-                height=100
+                key=f"sc_input_{i}_{st.session_state.sc_reset_key}",
+                height=100,
+                placeholder="Hashtags and Links are okay!"
             )
 
-        col_add, col_rem = st.columns(2)
-        if col_add.button("➕ Add More Comment Lines"):
+        c1, c2 = st.columns(2)
+        if c1.button("➕ Add Line", key=f"add_sc_{st.session_state.sc_reset_key}"):
             st.session_state.smart_comments.append("")
             st.rerun()
-        if col_rem.button("➖ Remove Last Line") and len(st.session_state.smart_comments) > 1:
-            st.session_state.smart_comments.pop()
-            st.rerun()
+        if c2.button("➖ Remove Line", key=f"rem_sc_{st.session_state.sc_reset_key}"):
+            if len(st.session_state.smart_comments) > 1:
+                st.session_state.smart_comments.pop()
+                st.rerun()
 
         st.divider()
 
-        # 3. DATE AND TIME SCHEDULING
+        # 3. DATE AND TIME
         st.write("### ⏰ Set Timing")
-        sc_timing_mode = st.radio("When to post?", ["Immediately", "Schedule for Later"], horizontal=True)
+        sc_mode = st.radio("When to post?", ["Immediately", "Schedule"], horizontal=True, key=f"mode_{st.session_state.sc_reset_key}")
 
         sc_unix = None
-        if sc_timing_mode == "Schedule for Later":
+        if sc_mode == "Schedule":
             sc_col1, sc_col2, sc_col3 = st.columns([2, 2, 1])
-            sc_date = sc_col1.date_input("Pick Date", value=datetime.now())
-            sc_time_str = sc_col2.text_input("Time (HH:MM)", value=datetime.now().strftime("%I:%M"))
-            sc_ampm = sc_col3.selectbox("AM/PM", ["AM", "PM"], key="sc_ampm_select")
+            sc_date = sc_col1.date_input("Date", key=f"date_{st.session_state.sc_reset_key}")
+            sc_time_str = sc_col2.text_input("Time (HH:MM)", value="12:00", key=f"time_{st.session_state.sc_reset_key}")
+            sc_ampm = sc_col3.selectbox("AM/PM", ["AM", "PM"], key=f"ampm_{st.session_state.sc_reset_key}")
 
             try:
-                # Convert to Unix for the background worker
                 sh, sm = map(int, sc_time_str.split(":"))
                 if sc_ampm == "PM" and sh < 12: sh += 12
                 elif sc_ampm == "AM" and sh == 12: sh = 0
-                
                 sc_dt = datetime.combine(sc_date, datetime.min.time()).replace(hour=sh, minute=sm)
-                # Convert PH Time to UTC for Facebook/Engine
                 sc_unix = int((sc_dt - timedelta(hours=utc_offset)).timestamp())
-                
-                # Validation
-                if sc_unix < time.time() + 600: # 10 mins buffer
-                    st.warning("⚠️ For scheduling, please set at least 10-20 minutes in the future.")
             except:
-                st.error("Invalid time format. Please use HH:MM (e.g., 02:30)")
+                st.error("Invalid time format.")
 
-        # 4. EXECUTE BUTTON
+        # 4. EXECUTE & AUTO-RESET
         if st.button("🚀 EXECUTE SMART COMMENTS", use_container_width=True, type="primary"):
             valid_comments = [c.strip() for c in st.session_state.smart_comments if c.strip()]
             
             if not valid_comments:
-                st.error("Please type at least one comment.")
+                st.error("Type a comment first!")
             else:
                 with st.spinner("Processing..."):
-                    if sc_timing_mode == "Immediately":
-                        # Post directly to Facebook API
-                        success_count = 0
+                    if sc_mode == "Immediately":
                         for msg in valid_comments:
-                            c_url = f"https://graph.facebook.com/v21.0/{selected_post_id}/comments"
-                            res = requests.post(c_url, data={'message': msg, 'access_token': target_token}).json()
-                            if "id" in res:
-                                success_count += 1
-                        st.success(f"✅ Successfully posted {success_count} comments immediately!")
+                            requests.post(f"https://graph.facebook.com/v21.0/{selected_post_id}/comments", 
+                                          data={'message': msg, 'access_token': target_token})
+                        st.success("✅ Posted immediately!")
                     else:
-                        # Add to the Master Queue for the background script to handle
-                        # We create a unique ID for this comment batch
                         batch_id = f"sc_{int(time.time())}"
                         st.session_state.master_queue[batch_id] = {
                             "type": "delayed_comment",
@@ -224,10 +225,12 @@ with tab2:
                             "comments": valid_comments,
                             "scheduled_time": sc_unix
                         }
-                        st.success(f"📅 {len(valid_comments)} comments scheduled for {sc_time_str} {sc_ampm}!")
+                        st.success("📅 Comments Scheduled!")
                     
-                    # Clear inputs after success
-                    st.session_state.smart_comments = [""]
+                    # --- THE "NO REFRESH" RESET TRICK ---
+                    st.session_state.smart_comments = [""] # Reset to one empty box
+                    st.session_state.sc_reset_key += 1    # Wipe all widget values
+                    
                     time.sleep(2)
                     st.rerun()
 
@@ -382,4 +385,5 @@ with tab3:
                 if col_del_q.button("🗑️ Remove from Queue", key=f"rm_q_{qid}"):
                     del st.session_state.master_queue[qid]
                     st.rerun()
+
 
