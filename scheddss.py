@@ -94,30 +94,72 @@ with tab1:
                 st.session_state.temp_comments = [""]
             else: st.error(str(res))
 
-# --- TAB 2: SMART COMMENTER (FIXED) ---
+# --- TAB 2: SMART COMMENTER (MULTIPLE COMMENTS VERSION) ---
 with tab2:
-    st.subheader("Comment on Published Posts")
-    # Fetch actual posts so the section isn't empty!
-    posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture&limit=10&access_token={target_token}"
-    posts_data = requests.get(posts_url).json().get('data', [])
+    st.subheader("💬 Bulk Comment on Published Posts")
+    
+    # Fetch actual posts so the section isn't empty
+    posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,picture,created_time&limit=10&access_token={target_token}"
+    posts_res = requests.get(posts_url).json()
+    posts_data = posts_res.get('data', [])
 
     if not posts_data:
-        st.info("No published posts found on this page.")
+        st.info("No published posts found to comment on.")
     else:
-        post_options = {p['id']: f"{p.get('message', 'No text')[:50]}..." for p in posts_data}
-        selected_post_id = st.selectbox("Select Post to Comment On:", options=list(post_options.keys()), format_func=lambda x: post_options[x])
+        # Create a clean list for the dropdown
+        post_options = {p['id']: f"{p.get('message', 'Media Post')[:50]}... ({p['created_time'][:10]})" for p in posts_data}
+        selected_post_id = st.selectbox("1. Pick a post:", options=list(post_options.keys()), format_func=lambda x: post_options[x])
         
-        # Show image preview of selected post
+        # Show what you're commenting on
         selected_post = next(p for p in posts_data if p['id'] == selected_post_id)
-        if selected_post.get('picture'): st.image(selected_post['picture'], width=150)
-
-        comment_text = st.text_area("Type your comment (Links & #Hashtags work!)", placeholder="Great deal! Check #Sneakers here: https://link.com")
+        if selected_post.get('picture'): 
+            st.image(selected_post['picture'], width=150)
         
-        if st.button("💬 Post Comment Now"):
-            res = requests.post(f"https://graph.facebook.com/v21.0/{selected_post_id}/comments", data={'message': comment_text, 'access_token': target_token})
-            if res.status_code == 200: st.success("Comment posted!")
-            else: st.error(res.text)
+        st.divider()
+        st.write("### 2. Prepare Your Comments")
+        st.caption("Hashtags #like #this and links https://link.com work perfectly.")
 
+        # MULTIPLE COMMENT LOGIC
+        for i in range(len(st.session_state.smart_comments)):
+            st.session_state.smart_comments[i] = st.text_area(
+                f"Comment #{i+1}", 
+                value=st.session_state.smart_comments[i], 
+                key=f"smart_c_box_{i}",
+                height=80
+            )
+        
+        col_btn1, col_btn2 = st.columns([1, 4])
+        if col_btn1.button("➕ Add Another"):
+            st.session_state.smart_comments.append("")
+            st.rerun()
+
+        if st.button("🚀 POST ALL COMMENTS NOW", use_container_width=True, type="primary"):
+            success_count = 0
+            # Filter out empty boxes
+            valid_comments = [c for c in st.session_state.smart_comments if c.strip()]
+            
+            if not valid_comments:
+                st.warning("Please type at least one comment.")
+            else:
+                with st.spinner(f"Posting {len(valid_comments)} comments..."):
+                    for msg in valid_comments:
+                        res = requests.post(
+                            f"https://graph.facebook.com/v21.0/{selected_post_id}/comments", 
+                            data={'message': msg, 'access_token': target_token}
+                        )
+                        if res.status_code == 200:
+                            success_count += 1
+                        # Small delay to prevent Facebook spam filters
+                        time.sleep(0.5) 
+                
+                if success_count > 0:
+                    st.success(f"Successfully posted {success_count} comments to the post!")
+                    # Clear the boxes after success
+                    st.session_state.smart_comments = [""]
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Failed to post comments. Check your permissions.")
 # --- TAB 3: SCHEDULED QUEUE ---
 with tab3:
     st.subheader("Manage Upcoming Posts")
@@ -149,3 +191,4 @@ with tab3:
                         st.rerun()
                 with c2:
                     if p.get('picture'): st.image(p['picture'])
+
