@@ -80,14 +80,32 @@ if "access_token" not in st.session_state:
             st.rerun()
         else:
             st.query_params.clear()
-            st.warning("Session expired. Please click login again.")
+            st.warning("Session expired or login failed. Please try again.")
             st.stop()
     else:
         st.title("👟 Scheddss: Login")
-        auth_url = f"https://www.facebook.com/v21.0/dialog/oauth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=pages_show_list,pages_manage_posts,pages_read_engagement,public_profile"
+        # ADDED 'pages_manage_engagement' to the scope below
+        scope_list = [
+            "pages_show_list",
+            "pages_manage_posts",
+            "pages_read_engagement",
+            "pages_manage_engagement",
+            "public_profile"
+        ]
+        scope_str = ",".join(scope_list)
+        
+        auth_url = (
+            f"https://www.facebook.com/v21.0/dialog/oauth?"
+            f"client_id={CLIENT_ID}&"
+            f"redirect_uri={REDIRECT_URI}&"
+            f"response_type=code&"
+            f"scope={scope_str}"
+        )
+        
+        st.info("Please connect your Facebook account. Ensure you grant all permissions for comments to work.")
         st.link_button("🔓 Log in with Facebook", auth_url, type="primary")
         st.stop()
-
+        
 # --- APP START ---
 user_token = st.session_state.access_token
 pages_res = requests.get(f"https://graph.facebook.com/v21.0/me/accounts?access_token={user_token}").json()
@@ -514,6 +532,7 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
 
 
 
