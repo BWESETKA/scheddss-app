@@ -228,7 +228,6 @@ with tab2:
                         st.success("Comments posted immediately!")
                     else:
                         # --- CLOUD SAVE LOGIC ---
-                        # We save each comment line as a separate row in Supabase
                         try:
                             for msg in valid_comments:
                                 supabase.table("comment_queue").insert({
@@ -259,7 +258,7 @@ with tab3:
     except:
         fb_posts = []
 
-    if not fb_posts and not st.session_state.master_queue:
+    if not fb_posts:
         st.info("Your queue is currently empty.")
     else:
         st.write(f"Showing **{len(fb_posts)}** scheduled posts:")
@@ -310,39 +309,44 @@ with tab3:
                         
                         if st.button("💾 SAVE & RE-SYNC TO FACEBOOK", key=f"save_all_{pid}", type="primary"):
                             with st.spinner("Updating..."):
-                                h, m = map(int, up_time_str.split(":"))
-                                if up_ampm == "PM" and h < 12: h += 12
-                                elif up_ampm == "AM" and h == 12: h = 0
-                                new_dt = datetime.combine(lv.date(), datetime.min.time()).replace(hour=h, minute=m)
-                                up_unix = int((new_dt - timedelta(hours=utc_offset)).timestamp())
+                                try:
+                                    h, m = map(int, up_time_str.split(":"))
+                                    if up_ampm == "PM" and h < 12: h += 12
+                                    elif up_ampm == "AM" and h == 12: h = 0
+                                    new_dt = datetime.combine(lv.date(), datetime.min.time()).replace(hour=h, minute=m)
+                                    up_unix = int((new_dt - timedelta(hours=utc_offset)).timestamp())
 
-                                if up_files:
-                                    requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
-                                    new_mids = []
-                                    for f in up_files:
-                                        is_vid = "video" in f.type
-                                        ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
-                                        res = requests.post(ep, data={'access_token': target_token, 'published': 'false'}, files={'file': f.getvalue()}).json()
-                                        if "id" in res: new_mids.append(res['id'])
-                                    
-                                    requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data={
-                                        'message': up_caption,
-                                        'access_token': target_token,
-                                        'attached_media': json.dumps([{'media_fbid': i} for i in new_mids]),
-                                        'published': 'false',
-                                        'scheduled_publish_time': up_unix
-                                    })
-                                else:
-                                    requests.post(f"https://graph.facebook.com/v21.0/{pid}", data={
-                                        'message': up_caption,
-                                        'scheduled_publish_time': up_unix,
-                                        'access_token': target_token
-                                    })
+                                    if up_files:
+                                        # To change media, FB requires deleting and re-posting
+                                        requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
+                                        new_mids = []
+                                        for f in up_files:
+                                            is_vid = "video" in f.type
+                                            ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
+                                            res = requests.post(ep, data={'access_token': target_token, 'published': 'false'}, files={'file': f.getvalue()}).json()
+                                            if "id" in res: new_mids.append(res['id'])
+                                        
+                                        requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data={
+                                            'message': up_caption,
+                                            'access_token': target_token,
+                                            'attached_media': json.dumps([{'media_fbid': i} for i in new_mids]),
+                                            'published': 'false',
+                                            'scheduled_publish_time': up_unix
+                                        })
+                                    else:
+                                        # Just update caption/time on existing post
+                                        requests.post(f"https://graph.facebook.com/v21.0/{pid}", data={
+                                            'message': up_caption,
+                                            'scheduled_publish_time': up_unix,
+                                            'access_token': target_token
+                                        })
 
-                                st.success("Changes Saved!")
-                                st.session_state[f"active_ed_{pid}"] = False
-                                time.sleep(1)
-                                st.rerun()
+                                    st.success("Changes Saved!")
+                                    st.session_state[f"active_ed_{pid}"] = False
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Update failed: {e}")
 
                         if st.button("✖️ Cancel", key=f"can_ed_{pid}"):
                             st.session_state[f"active_ed_{pid}"] = False
@@ -400,5 +404,3 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
-
-
