@@ -132,7 +132,8 @@ with st.sidebar:
         st.stop()
     utc_offset = st.number_input("UTC Offset (PH is 8)", value=8)
 
-tab1, tab2, tab3 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue"])
+#TABS
+tab1, tab2, tab3, tab4 = st.tabs(["🚀 New Post", "💬 Smart Commenter", "📅 Scheduled Queue", "📂 Bulk Scheduler"])
         
 # --- TAB 1: NEW POST (DIRECT & CLOUD SYNC) ---
 with tab1:
@@ -532,11 +533,68 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+# --- TAB 4: BULK CSV SCHEDULER ---
+with tab4:
+    st.subheader("📂 Bulk CSV Asset Manager")
+    
+    # 1. INPUT FIELDS
+    col_a, col_b = st.columns(2)
+    local_path = col_a.text_input("Local Folder Path (e.g., C:/Videos/Produced)", placeholder="Enter directory path here...")
+    
+    col_c, col_d = st.columns(2)
+    map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
+    cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
+    if map_csv and cap_csv and local_path:
+        import pandas as pd
+        import os
+        
+        # Read files (header=0 tells pandas to use the first row as columns, automatically skipping it as data)
+        df_map = pd.read_csv(map_csv)
+        df_cap = pd.read_csv(cap_csv)
+        
+        # Merge the two CSVs based on 'CATEGORY'
+        # 'how=left' ensures we keep all mapping rows even if a caption is missing
+        master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
+        
+        # Add selection and status columns
+        master_df.insert(0, 'Select', False)
+        
+        def verify_file(row):
+            full_fp = os.path.join(local_path, row['FILE NAME'])
+            return "✅ Found" if os.path.exists(full_fp) else "❌ Missing"
+            
+        master_df['Disk_Status'] = master_df.apply(verify_file, axis=1)
 
+        # Interactive Table
+        st.write("---")
+        edited_df = st.data_editor(
+            master_df,
+            column_config={
+                "Select": st.column_config.CheckboxColumn("Schedule?", default=False),
+                "Disk_Status": st.column_config.TextColumn("Local File", disabled=True),
+                "SCHEDULE TIME/DATE": st.column_config.TextColumn("Date", disabled=True),
+                "POST DESCRIPTION": st.column_config.TextColumn("Caption", disabled=True)
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
+        # Filter only selected rows
+        to_process = edited_df[edited_df['Select'] == True]
 
-
-
-
+        if not to_process.empty:
+            st.warning(f"You have selected {len(to_process)} videos to schedule.")
+            if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
+                for _, row in to_process.iterrows():
+                    if row['Disk_Status'] == "✅ Found":
+                        # PLACE YOUR API UPLOAD LOGIC HERE
+                        # 1. Use requests.post to FB using local_path + row['FILE NAME']
+                        # 2. Upload with published=false
+                        # 3. Schedule using the date parsed from row['SCHEDULE TIME/DATE']
+                        st.success(f"Queued: {row['FILE NAME']}")
+                    else:
+                        st.error(f"Cannot process {row['FILE NAME']}: File not found in path.")
+    else:
+        st.info("Please provide the Folder Path and upload both CSV files to start.")
 
