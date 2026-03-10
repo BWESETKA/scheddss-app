@@ -533,6 +533,7 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
+
 # --- TAB 4: BULK CSV SCHEDULER ---
 with tab4:
     import pandas as pd
@@ -596,8 +597,6 @@ with tab4:
             for _, row in to_process.iterrows():
                 if row['Disk_Status'] == "✅ Found":
                     # Determine Endpoint based on Toggle
-                    # If Reel is toggled ON, force video endpoint.
-                    # If OFF, check file extension for video vs photo.
                     file_ext = os.path.splitext(row['FILE NAME'])[1].lower()
                     is_vid = file_ext in ['.mp4', '.mov', '.avi']
                     
@@ -607,8 +606,11 @@ with tab4:
                         ep = f"https://graph.facebook.com/v21.0/{target_id}/photos"
                     
                     st.success(f"Queued: {row['FILE NAME']} as {'Reel' if is_reel else 'Post'}")
-                    # API Logic goes here...
+                    # API Logic to send 'ep' and file would follow here
                 else:
                     st.error(f"Cannot find: {row['FILE NAME']} in {local_path}")
     else:
         st.info("Please select a folder and upload both CSV files to proceed.")
+
+
+
