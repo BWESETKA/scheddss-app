@@ -539,13 +539,14 @@ with tab4:
     import pandas as pd
     import json
     import requests
+    from datetime import datetime
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
     # 1. Toggle for Post Format
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
     
-    # 2. Multi-Video Uploader (Replaces the broken folder picker)
+    # 2. Multi-Video Uploader
     uploaded_videos = st.file_uploader("Select your videos:", type=['mp4', 'mov'], accept_multiple_files=True)
     
     # 3. CSV Uploads
@@ -563,7 +564,7 @@ with tab4:
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
-        # Verify if uploaded files match the CSV
+        # Verify file existence
         uploaded_names = [f.name for f in uploaded_videos]
         def check_file(row):
             return "✅ Found" if str(row['FILE NAME']).strip() in uploaded_names else "❌ Missing"
@@ -573,16 +574,23 @@ with tab4:
         # Interactive Table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # 4. Execution Logic (Connects to FB API)
+        # 4. Execution Logic
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
             to_process = edited_df[edited_df['Select'] == True]
             
             for _, row in to_process.iterrows():
                 if row['Status'] == "✅ Found":
-                    # Get the actual file object
                     file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
                     
-                    # Determine Endpoint based on Toggle
+                    # --- CRITICAL FIX: Convert Date to Unix Integer ---
+                    try:
+                        dt_obj = pd.to_datetime(row['SCHEDULE TIME/DATE'])
+                        unix_timestamp = int(dt_obj.timestamp())
+                    except Exception as e:
+                        st.error(f"Date error for {row['FILE NAME']}: {e}")
+                        continue
+                    
+                    # Determine Endpoint
                     if is_reel:
                         ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
                     else:
@@ -593,17 +601,16 @@ with tab4:
                         'access_token': target_token, 
                         'message': row['POST DESCRIPTION'],
                         'published': 'false',
-                        'scheduled_publish_time': row['SCHEDULE TIME/DATE'] # Ensure this is in Unix format
+                        'scheduled_publish_time': unix_timestamp # Now a proper integer
                     }, files={'file': file_obj.getvalue()}).json()
                     
                     if "id" in res:
                         st.success(f"Queued: {row['FILE NAME']} (FB ID: {res['id']})")
                     else:
-                        st.error(f"Error: {res}")
+                        st.error(f"FB Error: {res}")
                 else:
-                    st.error(f"Missing: {row['FILE NAME']}")
+                    st.error(f"Missing file: {row['FILE NAME']}")
             
-            # Refresh to show in Tab 3
             st.rerun()
     else:
         st.info("Please upload your videos and both CSV files to proceed.")
