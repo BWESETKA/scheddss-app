@@ -539,65 +539,59 @@ with tab4:
     import os
     
     st.subheader("📂 Bulk CSV Asset Manager")
-    st.info("Tip: Paste the path of your folder (e.g., C:/Users/YourName/Downloads/TikTokDownloader/produced)")
     
-    # 1. Path Input (Reliable and works on all systems)
-    local_path = st.text_input("Enter Local Folder Path:", 
-                               placeholder="C:/Users/Lilibeth Tamsi/Downloads/TikTokDownloader/produced")
+    # Hybrid Path Selection
+    if 'selected_path' not in st.session_state:
+        st.session_state.selected_path = ""
+
+    col_btn, col_path = st.columns([1, 4])
+    
+    # Attempt native folder picker if running locally
+    if col_btn.button("📁 Browse Folder"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes('-topmost', 1)
+            path = filedialog.askdirectory()
+            if path:
+                st.session_state.selected_path = path
+        except:
+            st.error("Native picker not supported here. Please paste path below.")
+
+    local_path = col_path.text_input("Folder Path:", value=st.session_state.selected_path)
     
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
     if map_csv and cap_csv and local_path:
-        # Load CSVs
+        # Load and process data
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         
-        # Merge by CATEGORY
-        # We ensure the columns are clean by stripping whitespace
+        # Clean categories to prevent merge failures
         df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
         df_cap['CATEGORY'] = df_cap['CATEGORY'].astype(str).str.strip()
         
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
-        
-        # Add selection column
         master_df.insert(0, 'Select', False)
         
-        # Verify file existence
         def verify_file(row):
-            # Normalize path for Windows
             filename = str(row['FILE NAME']).strip()
             full_fp = os.path.join(local_path, filename).replace('\\', '/')
-            return "✅ Found" if os.path.exists(full_fp) else f"❌ Missing"
+            return "✅ Found" if os.path.exists(full_fp) else "❌ Missing"
             
         master_df['Disk_Status'] = master_df.apply(verify_file, axis=1)
 
-        # Interactive Table
-        st.write("---")
-        edited_df = st.data_editor(
-            master_df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn("Schedule?", default=False),
-                "Disk_Status": st.column_config.TextColumn("Local File", disabled=True),
-                "SCHEDULE TIME/DATE": st.column_config.TextColumn("Date", disabled=True),
-                "POST DESCRIPTION": st.column_config.TextColumn("Caption", disabled=True)
-            },
-            hide_index=True,
-            use_container_width=True
-        )
+        # Show table
+        edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # Processing Logic
         if st.button("🚀 GO NOW: Queue Selected Files"):
             to_process = edited_df[edited_df['Select'] == True]
-            if to_process.empty:
-                st.warning("Please select at least one video to process.")
-            else:
-                for _, row in to_process.iterrows():
-                    if row['Disk_Status'] == "✅ Found":
-                        st.success(f"Queued: {row['FILE NAME']}")
-                        # INSERT YOUR API UPLOAD/DB LOGIC HERE
-                    else:
-                        st.error(f"Cannot find: {row['FILE NAME']} in {local_path}")
+            for _, row in to_process.iterrows():
+                if row['Disk_Status'] == "✅ Found":
+                    st.success(f"Queued: {row['FILE NAME']}")
     else:
-        st.write("Please provide the folder path and upload both CSV files to begin.")
+        st.write("Please select a folder and upload the CSV files.")
