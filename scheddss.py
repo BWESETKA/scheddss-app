@@ -541,26 +541,27 @@ with tab4:
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
-    # 1. Toggle for Post Format
+    # 1. Toggle for Post Format (Post vs Reel)
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
     
-    # 2. Hybrid Path Selection (Crash-proof)
+    # 2. Hybrid Path Selection (Native Windows Picker + Text Fallback)
     if 'selected_path' not in st.session_state:
         st.session_state.selected_path = ""
 
     col_btn, col_path = st.columns([1, 4])
+    
     if col_btn.button("📁 Browse Folder"):
         try:
             import tkinter as tk
             from tkinter import filedialog
             root = tk.Tk()
-            root.withdraw()
-            root.wm_attributes('-topmost', 1)
+            root.withdraw()  # Hide the main window
+            root.wm_attributes('-topmost', 1)  # Bring picker to front
             path = filedialog.askdirectory()
             if path:
                 st.session_state.selected_path = path
         except:
-            st.error("Native picker not supported here. Please paste path below.")
+            st.error("Native folder picker is not supported on this platform. Please paste path manually.")
 
     local_path = col_path.text_input("Folder Path:", value=st.session_state.selected_path)
     
@@ -573,21 +574,24 @@ with tab4:
         # Load and clean data
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
+        
+        # Clean categories to ensure perfect merging
         df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
         df_cap['CATEGORY'] = df_cap['CATEGORY'].astype(str).str.strip()
         
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
-        # Verify file existence
+        # Verify file existence in the selected folder
         def verify_file(row):
             filename = str(row['FILE NAME']).strip()
+            # Construct path and normalize slashes for Windows/Linux compatibility
             full_fp = os.path.join(local_path, filename).replace('\\', '/')
             return "✅ Found" if os.path.exists(full_fp) else "❌ Missing"
             
         master_df['Disk_Status'] = master_df.apply(verify_file, axis=1)
 
-        # Show table
+        # Show Interactive Table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
         # 4. Execution Logic
@@ -600,17 +604,19 @@ with tab4:
                     file_ext = os.path.splitext(row['FILE NAME'])[1].lower()
                     is_vid = file_ext in ['.mp4', '.mov', '.avi']
                     
+                    # Logic: If Reel toggle is ON, or file is video, use video endpoint
                     if is_reel or is_vid:
                         ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
                     else:
                         ep = f"https://graph.facebook.com/v21.0/{target_id}/photos"
                     
                     st.success(f"Queued: {row['FILE NAME']} as {'Reel' if is_reel else 'Post'}")
-                    # API Logic to send 'ep' and file would follow here
+                    # API Logic here...
                 else:
                     st.error(f"Cannot find: {row['FILE NAME']} in {local_path}")
     else:
         st.info("Please select a folder and upload both CSV files to proceed.")
+
 
 
 
