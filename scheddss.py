@@ -537,13 +537,15 @@ with tab3:
 # --- TAB 4: BULK CSV SCHEDULER ---
 with tab4:
     import pandas as pd
+    import json
+    import requests
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
     # 1. Toggle for Post Format
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
     
-    # 2. Multi-Video Uploader (The "Browse" replacement you wanted)
+    # 2. Multi-Video Uploader (Replaces the broken folder picker)
     uploaded_videos = st.file_uploader("Select your videos:", type=['mp4', 'mov'], accept_multiple_files=True)
     
     # 3. CSV Uploads
@@ -552,7 +554,7 @@ with tab4:
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
     if uploaded_videos and map_csv and cap_csv:
-        # Load CSVs
+        # Load and clean CSVs
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
@@ -561,27 +563,50 @@ with tab4:
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
-        # Verify if the uploaded files match the CSVs
+        # Verify if uploaded files match the CSV
         uploaded_names = [f.name for f in uploaded_videos]
         def check_file(row):
             return "✅ Found" if str(row['FILE NAME']).strip() in uploaded_names else "❌ Missing"
             
         master_df['Status'] = master_df.apply(check_file, axis=1)
 
-        # Show Table
+        # Interactive Table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
+        # 4. Execution Logic (Connects to FB API)
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
             to_process = edited_df[edited_df['Select'] == True]
+            
             for _, row in to_process.iterrows():
                 if row['Status'] == "✅ Found":
-                    # Logic: Find the actual file object from the list
+                    # Get the actual file object
                     file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
-                    st.success(f"Queued: {row['FILE NAME']} as {'Reel' if is_reel else 'Post'}")
-                    # API Logic here: use file_obj.getvalue() to stream to Facebook
+                    
+                    # Determine Endpoint based on Toggle
+                    if is_reel:
+                        ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
+                    else:
+                        ep = f"https://graph.facebook.com/v21.0/{target_id}/photos"
+                    
+                    # UPLOAD TO FACEBOOK
+                    res = requests.post(ep, data={
+                        'access_token': target_token, 
+                        'message': row['POST DESCRIPTION'],
+                        'published': 'false',
+                        'scheduled_publish_time': row['SCHEDULE TIME/DATE'] # Ensure this is in Unix format
+                    }, files={'file': file_obj.getvalue()}).json()
+                    
+                    if "id" in res:
+                        st.success(f"Queued: {row['FILE NAME']} (FB ID: {res['id']})")
+                    else:
+                        st.error(f"Error: {res}")
                 else:
                     st.error(f"Missing: {row['FILE NAME']}")
-
+            
+            # Refresh to show in Tab 3
+            st.rerun()
+    else:
+        st.info("Please upload your videos and both CSV files to proceed.")
 
 
 
