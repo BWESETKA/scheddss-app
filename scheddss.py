@@ -534,12 +534,14 @@ with tab3:
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
 
+
 # --- TAB 4: BULK CSV SCHEDULER ---
 with tab4:
     import pandas as pd
     import json
     import requests
     from datetime import datetime
+    import os
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
@@ -547,7 +549,7 @@ with tab4:
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
     
     # 2. Multi-Video Uploader
-    uploaded_videos = st.file_uploader("Select your videos:", type=['mp4', 'mov'], accept_multiple_files=True)
+    uploaded_videos = st.file_uploader("Select your videos/images:", accept_multiple_files=True)
     
     # 3. CSV Uploads
     col_c, col_d = st.columns(2)
@@ -582,27 +584,23 @@ with tab4:
                 if row['Status'] == "✅ Found":
                     file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
                     
-                    # --- CRITICAL FIX: Convert Date to Unix Integer ---
-                    try:
-                        dt_obj = pd.to_datetime(row['SCHEDULE TIME/DATE'])
-                        unix_timestamp = int(dt_obj.timestamp())
-                    except Exception as e:
-                        st.error(f"Date error for {row['FILE NAME']}: {e}")
-                        continue
+                    # Date conversion
+                    dt_obj = pd.to_datetime(row['SCHEDULE TIME/DATE'])
+                    unix_timestamp = int(dt_obj.timestamp())
                     
-                    # Determine Endpoint
-                    if is_reel:
+                    # Endpoint & Payload logic
+                    file_ext = os.path.splitext(row['FILE NAME'])[1].lower()
+                    is_vid = file_ext in ['.mp4', '.mov', '.avi']
+                    
+                    if is_vid or is_reel:
                         ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
+                        payload = {'access_token': target_token, 'published': 'false', 'scheduled_publish_time': unix_timestamp, 'description': row['POST DESCRIPTION']}
                     else:
                         ep = f"https://graph.facebook.com/v21.0/{target_id}/photos"
+                        payload = {'access_token': target_token, 'published': 'false', 'scheduled_publish_time': unix_timestamp, 'message': row['POST DESCRIPTION']}
                     
                     # UPLOAD TO FACEBOOK
-                    res = requests.post(ep, data={
-                        'access_token': target_token, 
-                        'message': row['POST DESCRIPTION'],
-                        'published': 'false',
-                        'scheduled_publish_time': unix_timestamp # Now a proper integer
-                    }, files={'file': file_obj.getvalue()}).json()
+                    res = requests.post(ep, data=payload, files={'file': file_obj.getvalue()}).json()
                     
                     if "id" in res:
                         st.success(f"Queued: {row['FILE NAME']} (FB ID: {res['id']})")
@@ -613,7 +611,10 @@ with tab4:
             
             st.rerun()
     else:
-        st.info("Please upload your videos and both CSV files to proceed.")
+        st.info("Please upload your media and both CSV files to proceed.")
+
+
+
 
 
 
