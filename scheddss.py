@@ -533,15 +533,26 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
-# --- TAB 4: BULK CSV SCHEDULER ---
+# --- TAB 4: FOLDER PICKER LOGIC ---
 with tab4:
     import pandas as pd
     import os
+    import tkinter as tk
+    from tkinter import filedialog
 
     st.subheader("📂 Bulk CSV Asset Manager")
-    
-    # Path input
-    local_path = st.text_input("Enter your Local Folder Path:", placeholder="C:/Users/Lilibeth Tamsi/Downloads/TikTokDownloader/produced")
+
+    # This button triggers the Windows Folder Explorer
+    if st.button("📁 Click to Select Folder"):
+        root = tk.Tk()
+        root.withdraw()  # Hide the tiny tkinter window
+        root.wm_attributes('-topmost', 1)  # Bring to front
+        folder_selected = filedialog.askdirectory()
+        root.destroy()
+        st.session_state['selected_path'] = folder_selected
+
+    # Display the path that was picked
+    local_path = st.text_input("Selected Path:", value=st.session_state.get('selected_path', ""))
     
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
@@ -587,3 +598,4 @@ with tab4:
                     st.success(f"Queued: {row['FILE NAME']}")
                 else:
                     st.error(f"Cannot find: {row['FILE NAME']}")
+
