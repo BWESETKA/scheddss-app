@@ -537,85 +537,60 @@ with tab3:
 # --- TAB 4: BULK CSV SCHEDULER ---
 with tab4:
     import pandas as pd
-    import os
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
-    # 1. Toggle for Post Format (Post vs Reel)
+    # 1. Toggle for Post Format
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
     
-    # 2. Hybrid Path Selection (Native Windows Picker + Text Fallback)
-    if 'selected_path' not in st.session_state:
-        st.session_state.selected_path = ""
-
-    col_btn, col_path = st.columns([1, 4])
-    
-    if col_btn.button("📁 Browse Folder"):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()  # Hide the main window
-            root.wm_attributes('-topmost', 1)  # Bring picker to front
-            path = filedialog.askdirectory()
-            if path:
-                st.session_state.selected_path = path
-        except:
-            st.error("Native folder picker is not supported on this platform. Please paste path manually.")
-
-    local_path = col_path.text_input("Folder Path:", value=st.session_state.selected_path)
+    # 2. Multi-Video Uploader (The "Browse" replacement you wanted)
+    uploaded_videos = st.file_uploader("Select your videos:", type=['mp4', 'mov'], accept_multiple_files=True)
     
     # 3. CSV Uploads
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
-    if map_csv and cap_csv and local_path:
-        # Load and clean data
+    if uploaded_videos and map_csv and cap_csv:
+        # Load CSVs
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
-        
-        # Clean categories to ensure perfect merging
         df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
         df_cap['CATEGORY'] = df_cap['CATEGORY'].astype(str).str.strip()
         
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
-        # Verify file existence in the selected folder
-        def verify_file(row):
-            filename = str(row['FILE NAME']).strip()
-            # Construct path and normalize slashes for Windows/Linux compatibility
-            full_fp = os.path.join(local_path, filename).replace('\\', '/')
-            return "✅ Found" if os.path.exists(full_fp) else "❌ Missing"
+        # Verify if the uploaded files match the CSVs
+        uploaded_names = [f.name for f in uploaded_videos]
+        def check_file(row):
+            return "✅ Found" if str(row['FILE NAME']).strip() in uploaded_names else "❌ Missing"
             
-        master_df['Disk_Status'] = master_df.apply(verify_file, axis=1)
+        master_df['Status'] = master_df.apply(check_file, axis=1)
 
-        # Show Interactive Table
+        # Show Table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # 4. Execution Logic
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
             to_process = edited_df[edited_df['Select'] == True]
-            
             for _, row in to_process.iterrows():
-                if row['Disk_Status'] == "✅ Found":
-                    # Determine Endpoint based on Toggle
-                    file_ext = os.path.splitext(row['FILE NAME'])[1].lower()
-                    is_vid = file_ext in ['.mp4', '.mov', '.avi']
-                    
-                    # Logic: If Reel toggle is ON, or file is video, use video endpoint
-                    if is_reel or is_vid:
-                        ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
-                    else:
-                        ep = f"https://graph.facebook.com/v21.0/{target_id}/photos"
-                    
+                if row['Status'] == "✅ Found":
+                    # Logic: Find the actual file object from the list
+                    file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
                     st.success(f"Queued: {row['FILE NAME']} as {'Reel' if is_reel else 'Post'}")
-                    # API Logic here...
+                    # API Logic here: use file_obj.getvalue() to stream to Facebook
                 else:
-                    st.error(f"Cannot find: {row['FILE NAME']} in {local_path}")
-    else:
-        st.info("Please select a folder and upload both CSV files to proceed.")
+                    st.error(f"Missing: {row['FILE NAME']}")
+
+
+
+
+
+
+
+
+
+
 
 
 
