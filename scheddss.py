@@ -540,13 +540,14 @@ with tab4:
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
-    # Hybrid Path Selection
+    # 1. Toggle for Post Format
+    is_reel = st.toggle("Post as Reel (Video Only)", value=True)
+    
+    # 2. Hybrid Path Selection (Crash-proof)
     if 'selected_path' not in st.session_state:
         st.session_state.selected_path = ""
 
     col_btn, col_path = st.columns([1, 4])
-    
-    # Attempt native folder picker if running locally
     if col_btn.button("📁 Browse Folder"):
         try:
             import tkinter as tk
@@ -562,22 +563,22 @@ with tab4:
 
     local_path = col_path.text_input("Folder Path:", value=st.session_state.selected_path)
     
+    # 3. CSV Uploads
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
     if map_csv and cap_csv and local_path:
-        # Load and process data
+        # Load and clean data
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
-        
-        # Clean categories to prevent merge failures
         df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
         df_cap['CATEGORY'] = df_cap['CATEGORY'].astype(str).str.strip()
         
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
+        # Verify file existence
         def verify_file(row):
             filename = str(row['FILE NAME']).strip()
             full_fp = os.path.join(local_path, filename).replace('\\', '/')
@@ -588,10 +589,26 @@ with tab4:
         # Show table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        if st.button("🚀 GO NOW: Queue Selected Files"):
+        # 4. Execution Logic
+        if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
             to_process = edited_df[edited_df['Select'] == True]
+            
             for _, row in to_process.iterrows():
                 if row['Disk_Status'] == "✅ Found":
-                    st.success(f"Queued: {row['FILE NAME']}")
+                    # Determine Endpoint based on Toggle
+                    # If Reel is toggled ON, force video endpoint.
+                    # If OFF, check file extension for video vs photo.
+                    file_ext = os.path.splitext(row['FILE NAME'])[1].lower()
+                    is_vid = file_ext in ['.mp4', '.mov', '.avi']
+                    
+                    if is_reel or is_vid:
+                        ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
+                    else:
+                        ep = f"https://graph.facebook.com/v21.0/{target_id}/photos"
+                    
+                    st.success(f"Queued: {row['FILE NAME']} as {'Reel' if is_reel else 'Post'}")
+                    # API Logic goes here...
+                else:
+                    st.error(f"Cannot find: {row['FILE NAME']} in {local_path}")
     else:
-        st.write("Please select a folder and upload the CSV files.")
+        st.info("Please select a folder and upload both CSV files to proceed.")
