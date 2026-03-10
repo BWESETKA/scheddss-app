@@ -533,51 +533,48 @@ with tab3:
                         if col_sc_can.button("✖️ Close", key=f"can_sc_{cid}"):
                             st.session_state[f"active_sc_ed_{cid}"] = False
                             st.rerun()
-# --- TAB 4: FOLDER PICKER LOGIC ---
+# --- TAB 4: BULK CSV SCHEDULER ---
 with tab4:
     import pandas as pd
     import os
-    import tkinter as tk
-    from tkinter import filedialog
-
+    
     st.subheader("📂 Bulk CSV Asset Manager")
-
-    # This button triggers the Windows Folder Explorer
-    if st.button("📁 Click to Select Folder"):
-        root = tk.Tk()
-        root.withdraw()  # Hide the tiny tkinter window
-        root.wm_attributes('-topmost', 1)  # Bring to front
-        folder_selected = filedialog.askdirectory()
-        root.destroy()
-        st.session_state['selected_path'] = folder_selected
-
-    # Display the path that was picked
-    local_path = st.text_input("Selected Path:", value=st.session_state.get('selected_path', ""))
+    st.info("Tip: Paste the path of your folder (e.g., C:/Users/YourName/Downloads/TikTokDownloader/produced)")
+    
+    # 1. Path Input (Reliable and works on all systems)
+    local_path = st.text_input("Enter Local Folder Path:", 
+                               placeholder="C:/Users/Lilibeth Tamsi/Downloads/TikTokDownloader/produced")
     
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
     if map_csv and cap_csv and local_path:
-        # Load CSVs - pandas automatically handles the first row as headers
+        # Load CSVs
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         
         # Merge by CATEGORY
+        # We ensure the columns are clean by stripping whitespace
+        df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
+        df_cap['CATEGORY'] = df_cap['CATEGORY'].astype(str).str.strip()
+        
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         
-        # Add checkbox column
+        # Add selection column
         master_df.insert(0, 'Select', False)
         
-        # Verify if file exists in the path you provided
+        # Verify file existence
         def verify_file(row):
-            # We use .replace to ensure path slashes work on Windows/Python
-            full_fp = os.path.join(local_path, row['FILE NAME']).replace('\\', '/')
-            return "✅ Found" if os.path.exists(full_fp) else "❌ Missing"
+            # Normalize path for Windows
+            filename = str(row['FILE NAME']).strip()
+            full_fp = os.path.join(local_path, filename).replace('\\', '/')
+            return "✅ Found" if os.path.exists(full_fp) else f"❌ Missing"
             
         master_df['Disk_Status'] = master_df.apply(verify_file, axis=1)
 
-        # Show the Interactive Table
+        # Interactive Table
+        st.write("---")
         edited_df = st.data_editor(
             master_df,
             column_config={
@@ -590,12 +587,17 @@ with tab4:
             use_container_width=True
         )
 
-        # Logic for processing
+        # Processing Logic
         if st.button("🚀 GO NOW: Queue Selected Files"):
             to_process = edited_df[edited_df['Select'] == True]
-            for _, row in to_process.iterrows():
-                if row['Disk_Status'] == "✅ Found":
-                    st.success(f"Queued: {row['FILE NAME']}")
-                else:
-                    st.error(f"Cannot find: {row['FILE NAME']}")
-
+            if to_process.empty:
+                st.warning("Please select at least one video to process.")
+            else:
+                for _, row in to_process.iterrows():
+                    if row['Disk_Status'] == "✅ Found":
+                        st.success(f"Queued: {row['FILE NAME']}")
+                        # INSERT YOUR API UPLOAD/DB LOGIC HERE
+                    else:
+                        st.error(f"Cannot find: {row['FILE NAME']} in {local_path}")
+    else:
+        st.write("Please provide the folder path and upload both CSV files to begin.")
