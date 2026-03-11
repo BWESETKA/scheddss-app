@@ -544,6 +544,11 @@ with tab4:
     import time
     
     st.subheader("📂 Bulk CSV Asset Manager")
+
+    # 1. ADD THIS TOGGLE BELOW SUBHEADER
+     st.subheader("📂 Bulk CSV Asset Manager")
+     is_reel = st.toggle("Post as Reel (Video Only)", value=True) 
+     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)  
     
     # 1. FILE UPLOADER WITH COUNTER
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
@@ -634,6 +639,7 @@ with tab4:
                 st.divider()
                 st.success(f"Finished! Processed {len(selected_rows)} posts.")
                 st.table(pd.DataFrame(results))
+
 
 
 
