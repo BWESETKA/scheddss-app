@@ -322,7 +322,12 @@ with tab2:
                     with st.container(border=True):
                         if post.get('full_picture'): st.image(post['full_picture'], use_container_width=True)
                         st.write(f"**{post.get('message', 'Media')[:15]}...**")
-                        st.caption(f"{post.get('created_time', '')[:10]} - 9:30 AM")
+                        
+                        # Fix: Parse actual time from FB API
+                        raw_time = post.get('created_time', '')
+                        if raw_time:
+                            dt = datetime.strptime(raw_time, "%Y-%m-%dT%H:%M:%S+0000")
+                            st.caption(dt.strftime("%Y-%m-%d: %I:%M %p"))
                         
                         is_checked = st.checkbox("Select", key=f"sel_{post['id']}", 
                                                  value=post['id'] in st.session_state.selected_posts)
@@ -645,6 +650,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
