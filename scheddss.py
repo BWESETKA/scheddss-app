@@ -585,14 +585,17 @@ with tab4:
                         files={'video_file_chunk': file_obj.getvalue()}
                     )
                     
-                    # 3. FINISH
+                    # 3. FINISH (UPDATED FOR SCHEDULING)
                     final_res = requests.post(
-                        f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                        data={
-                            'access_token': target_token, 'upload_phase': 'finish', 
-                            'upload_session_id': session_id, 'description': row['POST DESCRIPTION'],
-                            'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp())
-                        }
+                       f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                       data={
+                           'access_token': target_token, 
+                           'upload_phase': 'finish', 
+                           'upload_session_id': session_id,
+                           'description': row['POST DESCRIPTION'],
+                           'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
+                           'published': False  # <--- THIS IS THE MISSING KEY
+                      }
                     ).json()
                     
                     vid_id = final_res.get('id')
@@ -613,6 +616,7 @@ with tab4:
                 if "✅" in res: st.success(res)
                 elif "⚠️" in res: st.warning(res)
                 else: st.error(res)
+
 
 
 
