@@ -537,39 +537,26 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER (RESUMABLE UPLOAD FLOW) ---
-import streamlit as st
-import pandas as pd
-import requests
-from datetime import timedelta
-
 with tab4:
+    import pandas as pd
+    import requests
+    import os
+    import time
+    from datetime import timedelta
+    
     st.subheader("📂 Bulk CSV Asset Manager")
-
-    # 1. Fetch Pages (Assumes target_token is defined globally or in session_state)
-    try:
-        pages_res = requests.get(
-            f"https://graph.facebook.com/v21.0/me/accounts?access_token={target_token}"
-        ).json()
-        
-        # Mapping Page Names to IDs and Tokens
-        page_map = {p['name']: {'id': p['id'], 'token': p['access_token']} for p in pages_res.get('data', [])}
-        page_options = ["Choose a Page..."] + list(page_map.keys())
-        
-        selected_page_name = st.selectbox("Select Page to post to:", options=page_options)
-        selected_page = page_map.get(selected_page_name)
-    except Exception as e:
-        st.error(f"Could not fetch pages: {e}")
-        selected_page = None
-
-    # 2. Content Type Selection
+    
+    # NEW: Dropdown with a "Choose..." placeholder to block the button
     post_type_options = ["Choose Content Type...", "Reel", "Standard Post"]
     selected_type = st.selectbox("Select Post Type (Required):", options=post_type_options)
-
-    # 3. Interlock Logic
-    # Button is only enabled if a valid page AND a content type are selected
-    is_ready = (selected_type != "Choose Content Type...") and (selected_page is not None)
-
+    
+    # Logic to enable/disable button
+    is_ready = selected_type != "Choose Content Type..."
+    
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
+    if uploaded_videos:
+        st.info(f"Selected: **{len(uploaded_videos)}** video(s).")
+
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
@@ -582,6 +569,7 @@ with tab4:
         
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
+        # The button is only clickable if a type is chosen
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary", disabled=not is_ready):
             results = []
             selected_rows = edited_df[edited_df['Select'] == True]
@@ -591,9 +579,7 @@ with tab4:
             else:
                 progress_bar = st.progress(0, text="Starting bulk upload...")
                 
-                # Use the selected page credentials
-                page_id = selected_page['id']
-                page_token = selected_page['token']
+                # Mapping the selection to the exact API strings Facebook needs
                 asset_type = 'REEL' if selected_type == "Reel" else 'POST'
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
@@ -605,37 +591,40 @@ with tab4:
                     try:
                         # 1. INITIATE
                         init_res = requests.post(
-                            f"https://graph-video.facebook.com/v21.0/{page_id}/videos",
-                            data={'access_token': page_token, 'upload_phase': 'start', 'file_size': file_obj.size}
+                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                            data={'access_token': target_token, 'upload_phase': 'start', 'file_size': file_obj.size}
                         ).json()
                         session_id = init_res['upload_session_id']
                         
                         # 2. TRANSFER
                         requests.post(
-                            f"https://graph-video.facebook.com/v21.0/{page_id}/videos",
-                            data={'access_token': page_token, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
+                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                            data={'access_token': target_token, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
                             files={'video_file_chunk': file_obj.getvalue()}
                         )
                         
-                        # 3. FINISH
+                        # 3. FINISH (FIXED TIMEZONE + STRICT ASSET TYPE)
                         local_dt = pd.to_datetime(row['SCHEDULE TIME/DATE'])
                         utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
                         
                         final_res = requests.post(
-                            f"https://graph-video.facebook.com/v21.0/{page_id}/videos",
+                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={
-                                'access_token': page_token, 
+                                'access_token': target_token, 
                                 'upload_phase': 'finish', 
                                 'upload_session_id': session_id,
                                 'description': row['POST DESCRIPTION'],
                                 'scheduled_publish_time': utc_timestamp,
                                 'published': False,
-                                'video_asset_type': asset_type
+                                'video_asset_type': asset_type # <--- SENDS 'REEL' OR 'POST'
                             }
                         ).json()
                         
                         vid_id = final_res.get('id')
-                        results.append({"File": row['FILE NAME'], "Status": f"✅ Success ({selected_type})" if vid_id else f"⚠️ API Warning: {final_res}"})
+                        if vid_id:
+                            results.append({"File": row['FILE NAME'], "Status": f"✅ Success ({selected_type})"})
+                        else:
+                            results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
                             
                     except Exception as e:
                         results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
@@ -643,8 +632,15 @@ with tab4:
                     progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
 
                 st.divider()
-                st.success(f"Finished! Processed {len(selected_rows)} posts to {selected_page_name} as {selected_type}.")
+                st.success(f"Finished! Processed {len(selected_rows)} posts as {selected_type}.")
                 st.table(pd.DataFrame(results))
+        
+        # Friendly reminder if the button is locked
+        if not is_ready:
+            st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
+
+
 
 
 
