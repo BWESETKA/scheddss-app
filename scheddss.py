@@ -542,6 +542,7 @@ with tab4:
     import requests
     import os
     import time
+    from datetime import timedelta
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
@@ -550,7 +551,7 @@ with tab4:
     
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
     if uploaded_videos:
-        st.info(f"You have selected **{len(uploaded_videos)}** video(s) for processing.")
+        st.info(f"Selected: **{len(uploaded_videos)}** video(s).")
 
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
@@ -572,8 +573,6 @@ with tab4:
                 st.warning("Please select at least one row from the table.")
             else:
                 progress_bar = st.progress(0, text="Starting bulk upload...")
-                
-                # Determine asset type based on toggle
                 asset_type = 'REEL' if is_reel else 'POST'
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
@@ -597,7 +596,11 @@ with tab4:
                             files={'video_file_chunk': file_obj.getvalue()}
                         )
                         
-                        # 3. FINISH (FUNCTIONAL REEL LOGIC)
+                        # 3. FINISH (FIXED TIMEZONE + REEL LOGIC)
+                        # Convert local PH time to UTC by subtracting 8 hours
+                        local_dt = pd.to_datetime(row['SCHEDULE TIME/DATE'])
+                        utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
+                        
                         final_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={
@@ -605,7 +608,7 @@ with tab4:
                                 'upload_phase': 'finish', 
                                 'upload_session_id': session_id,
                                 'description': row['POST DESCRIPTION'],
-                                'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
+                                'scheduled_publish_time': utc_timestamp,
                                 'published': False,
                                 'video_asset_type': asset_type
                             }
