@@ -546,8 +546,12 @@ with tab4:
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
-    # FUNCTIONAL TOGGLE: True sets asset_type to 'REEL', False uses default
-    is_reel = st.toggle("Post as Reel (Video Only)", value=True)
+    # NEW: Dropdown with a "Choose..." placeholder to block the button
+    post_type_options = ["Choose Content Type...", "Reel", "Standard Post"]
+    selected_type = st.selectbox("Select Post Type (Required):", options=post_type_options)
+    
+    # Logic to enable/disable button
+    is_ready = selected_type != "Choose Content Type..."
     
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
     if uploaded_videos:
@@ -565,7 +569,8 @@ with tab4:
         
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
+        # The button is only clickable if a type is chosen
+        if st.button("🚀 GO NOW: Queue Selected Files", type="primary", disabled=not is_ready):
             results = []
             selected_rows = edited_df[edited_df['Select'] == True]
             
@@ -573,7 +578,9 @@ with tab4:
                 st.warning("Please select at least one row from the table.")
             else:
                 progress_bar = st.progress(0, text="Starting bulk upload...")
-                asset_type = 'REEL' if is_reel else 'POST'
+                
+                # Mapping the selection to the exact API strings Facebook needs
+                asset_type = 'REEL' if selected_type == "Reel" else 'POST'
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
                     file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
@@ -596,8 +603,7 @@ with tab4:
                             files={'video_file_chunk': file_obj.getvalue()}
                         )
                         
-                        # 3. FINISH (FIXED TIMEZONE + REEL LOGIC)
-                        # Convert local PH time to UTC by subtracting 8 hours
+                        # 3. FINISH (FIXED TIMEZONE + STRICT ASSET TYPE)
                         local_dt = pd.to_datetime(row['SCHEDULE TIME/DATE'])
                         utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
                         
@@ -610,13 +616,13 @@ with tab4:
                                 'description': row['POST DESCRIPTION'],
                                 'scheduled_publish_time': utc_timestamp,
                                 'published': False,
-                                'video_asset_type': asset_type
+                                'video_asset_type': asset_type # <--- SENDS 'REEL' OR 'POST'
                             }
                         ).json()
                         
                         vid_id = final_res.get('id')
                         if vid_id:
-                            results.append({"File": row['FILE NAME'], "Status": "✅ Success"})
+                            results.append({"File": row['FILE NAME'], "Status": f"✅ Success ({selected_type})"})
                         else:
                             results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
                             
@@ -626,8 +632,13 @@ with tab4:
                     progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
 
                 st.divider()
-                st.success(f"Finished! Processed {len(selected_rows)} posts.")
+                st.success(f"Finished! Processed {len(selected_rows)} posts as {selected_type}.")
                 st.table(pd.DataFrame(results))
+        
+        # Friendly reminder if the button is locked
+        if not is_ready:
+            st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
