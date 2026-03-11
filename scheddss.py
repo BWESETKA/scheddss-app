@@ -276,13 +276,6 @@ with tab1:
                     st.error(f"Critical System Error: {e}")
 
 # ------ TAB 2-------
-import streamlit as st
-import pandas as pd
-import requests
-from datetime import datetime
-
-# (Ensure this is in your main imports at the top of your file)
-
 with tab2:
     st.subheader("💬 Smart Commenter")
     
@@ -298,7 +291,8 @@ with tab2:
     if "sc_posts" not in st.session_state:
         try:
             posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture,created_time&limit=50&access_token={target_token}"
-            st.session_state.sc_posts = requests.get(posts_url).json().get('data', [])
+            response = requests.get(posts_url).json()
+            st.session_state.sc_posts = response.get('data', [])
         except:
             st.session_state.sc_posts = []
 
@@ -309,7 +303,7 @@ with tab2:
         df = pd.read_csv(uploaded_file)
         st.session_state.comment_templates = dict(zip(df['CATEGORY'], df['POST DESCRIPTION']))
     
-    # 3. GRID RENDER (3 rows x 6 columns)
+    # 3. GRID RENDER
     if "selected_posts" not in st.session_state: st.session_state.selected_posts = {}
     
     for row in range(3):
@@ -323,7 +317,6 @@ with tab2:
                         if post.get('full_picture'): st.image(post['full_picture'], use_container_width=True)
                         st.write(f"**{post.get('message', 'Media')[:15]}...**")
                         
-                        # Fix: Parse actual time from FB API
                         raw_time = post.get('created_time', '')
                         if raw_time:
                             dt = datetime.strptime(raw_time, "%Y-%m-%dT%H:%M:%S+0000")
@@ -336,57 +329,38 @@ with tab2:
 
     st.markdown("---")
     
-   # 4. COMMENT CONFIGURATION
-   if st.session_state.selected_posts:
+    # 4. COMMENT CONFIGURATION
+    if st.session_state.selected_posts:
         st.write("### 📝 Configure Comments")
         if "results" not in st.session_state: st.session_state.results = []
         if "refresh_key" not in st.session_state: st.session_state.refresh_key = 0
 
         for post_id, post in st.session_state.selected_posts.items():
-            # --- ACCURATE TIME PARSING ---
             raw_time = post.get('created_time', '')
-            # We parse the FB timestamp and format it to your preferred look
             dt = datetime.strptime(raw_time, "%Y-%m-%dT%H:%M:%S+0000")
             display_time = dt.strftime("%Y-%m-%d: %I:%M %p")
             
-            # --- DISPLAY WITH ACCURATE TIME ---
             st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:40]}` | *{display_time}*")
             
-            if f"comm_{post_id}" not in st.session_state: 
-                st.session_state[f"comm_{post_id}"] = [""]
-
+            if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
             
-            # The Callback to update the content AND the refresh key
             def update_comment_callback(pid):
                 selected_cat = st.session_state[f"temp_sel_{pid}"]
                 if selected_cat != "-- Select Category --":
                     st.session_state[f"comm_{pid}"] = [st.session_state.comment_templates[selected_cat]]
-                    st.session_state.refresh_key += 1 # Forces text_area refresh
+                    st.session_state.refresh_key += 1
             
-            # Smart Fill Dropdown
             if "comment_templates" in st.session_state:
-                st.selectbox(
-                    f"Smart Fill (Category)", 
-                    ["-- Select Category --"] + list(st.session_state.comment_templates.keys()), 
-                    key=f"temp_sel_{post_id}",
-                    on_change=update_comment_callback,
-                    args=(post_id,)
-                )
+                st.selectbox(f"Smart Fill (Category)", ["-- Select Category --"] + list(st.session_state.comment_templates.keys()), 
+                             key=f"temp_sel_{post_id}", on_change=update_comment_callback, args=(post_id,))
             
-            # Editable Text Area with unique dynamic key
             for i, val in enumerate(st.session_state[f"comm_{post_id}"]):
-                # We include refresh_key in the key so it forces a re-render
-                st.session_state[f"comm_{post_id}"][i] = st.text_area(
-                    f"Comment Line #{i+1}", 
-                    value=st.session_state[f"comm_{post_id}"][i], 
-                    key=f"area_{post_id}_{i}_{st.session_state.refresh_key}"
-                )
+                st.session_state[f"comm_{post_id}"][i] = st.text_area(f"Line #{i+1}", value=val, key=f"area_{post_id}_{i}_{st.session_state.refresh_key}")
             
             if st.button("➕ Add Line", key=f"add_{post_id}"):
-                st.session_state[f"comm_{post_id}"].append("")
-                st.rerun()
+                st.session_state[f"comm_{post_id}"].append(""); st.rerun()
 
-       # 5. EXECUTION & STATUS TRACKING
+        # 5. EXECUTION & STATUS TRACKING
         if st.button("🚀 GO NOW", type="primary"):
             st.session_state.results = []
             for post_id in st.session_state.selected_posts:
@@ -398,7 +372,6 @@ with tab2:
                         st.session_state.results.append(f"Post {post_id[:5]}: {status}")
             st.rerun()
 
-        # Display Results
         for r in st.session_state.results:
             st.write(r)
             
@@ -664,6 +637,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
