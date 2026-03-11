@@ -535,29 +535,23 @@ with tab3:
                             st.rerun()
 
 
-# --- TAB 4: BULK CSV SCHEDULER ---
+
+# --- TAB 4: BULK CSV SCHEDULER (RESUMABLE UPLOAD FLOW) ---
 with tab4:
     import pandas as pd
-    import json
     import requests
-    from datetime import datetime
     import os
     
     st.subheader("📂 Bulk CSV Asset Manager")
     
-    # 1. Toggle for Post Format
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
+    uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
     
-    # 2. Multi-Video Uploader
-    uploaded_videos = st.file_uploader("Select your videos/images:", accept_multiple_files=True)
-    
-    # 3. CSV Uploads
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
     if uploaded_videos and map_csv and cap_csv:
-        # Load and clean CSVs
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
@@ -566,52 +560,49 @@ with tab4:
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
-        # Verify file existence
         uploaded_names = [f.name for f in uploaded_videos]
-        def check_file(row):
-            return "✅ Found" if str(row['FILE NAME']).strip() in uploaded_names else "❌ Missing"
-            
-        master_df['Status'] = master_df.apply(check_file, axis=1)
+        master_df['Status'] = master_df.apply(lambda r: "✅ Found" if str(r['FILE NAME']).strip() in uploaded_names else "❌ Missing", axis=1)
 
-        # Interactive Table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # 4. Execution Logic
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
-            to_process = edited_df[edited_df['Select'] == True]
-            
-            for _, row in to_process.iterrows():
+            for _, row in edited_df[edited_df['Select'] == True].iterrows():
                 if row['Status'] == "✅ Found":
                     file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
                     
-                    # Date conversion
-                    dt_obj = pd.to_datetime(row['SCHEDULE TIME/DATE'])
-                    unix_timestamp = int(dt_obj.timestamp())
+                    # 1. INITIATE SESSION
+                    init_res = requests.post(
+                        f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                        data={'access_token': target_token, 'upload_phase': 'start', 'file_size': file_obj.size}
+                    ).json()
                     
-                    # Endpoint & Payload logic
-                    file_ext = os.path.splitext(row['FILE NAME'])[1].lower()
-                    is_vid = file_ext in ['.mp4', '.mov', '.avi']
+                    if 'upload_session_id' not in init_res:
+                        st.error(f"Init Error: {init_res}")
+                        continue
                     
-                    if is_vid or is_reel:
-                        ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos"
-                        payload = {'access_token': target_token, 'published': 'false', 'scheduled_publish_time': unix_timestamp, 'description': row['POST DESCRIPTION']}
-                    else:
-                        ep = f"https://graph.facebook.com/v21.0/{target_id}/photos"
-                        payload = {'access_token': target_token, 'published': 'false', 'scheduled_publish_time': unix_timestamp, 'message': row['POST DESCRIPTION']}
+                    session_id = init_res['upload_session_id']
                     
-                    # UPLOAD TO FACEBOOK
-                    res = requests.post(ep, data=payload, files={'file': file_obj.getvalue()}).json()
+                    # 2. TRANSFER DATA
+                    requests.post(
+                        f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                        data={'access_token': target_token, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
+                        files={'video_file_chunk': file_obj.getvalue()}
+                    )
                     
-                    if "id" in res:
-                        st.success(f"Queued: {row['FILE NAME']} (FB ID: {res['id']})")
-                    else:
-                        st.error(f"FB Error: {res}")
-                else:
-                    st.error(f"Missing file: {row['FILE NAME']}")
-            
+                    # 3. FINISH
+                    final_res = requests.post(
+                        f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                        data={
+                            'access_token': target_token, 
+                            'upload_phase': 'finish', 
+                            'upload_session_id': session_id,
+                            'description': row['POST DESCRIPTION'],
+                            'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp())
+                        }
+                    ).json()
+                    
+                    st.success(f"Queued: {row['FILE NAME']} (FB ID: {final_res.get('id', 'N/A')})")
             st.rerun()
-    else:
-        st.info("Please upload your media and both CSV files to proceed.")
 
 
 
