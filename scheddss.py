@@ -297,12 +297,13 @@ with tab2:
             st.session_state.sc_posts = []
 
     # 2. CSV UPLOADER
-    uploaded_file = st.file_uploader("📂 Upload Comment CSV", type="csv")
+    st.write("---")
+    uploaded_file = st.file_uploader("📂 Upload Comment CSV (Template Library)", type="csv")
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
         st.session_state.comment_templates = dict(zip(df['CATEGORY'], df['POST DESCRIPTION']))
     
-    # 3. GRID RENDER
+    # 3. GRID RENDER (3 rows x 6 columns)
     if "selected_posts" not in st.session_state: st.session_state.selected_posts = {}
     
     for row in range(3):
@@ -318,8 +319,9 @@ with tab2:
                         
                         # Fix: Parse actual time from FB API
                         raw_time = post.get('created_time', '')
-                        dt = datetime.strptime(raw_time, "%Y-%m-%dT%H:%M:%S+0000")
-                        st.caption(dt.strftime("%Y-%m-%d: %I:%M %p"))
+                        if raw_time:
+                            dt = datetime.strptime(raw_time, "%Y-%m-%dT%H:%M:%S+0000")
+                            st.caption(dt.strftime("%Y-%m-%d: %I:%M %p"))
                         
                         is_checked = st.checkbox("Select", key=f"sel_{post['id']}", 
                                                  value=post['id'] in st.session_state.selected_posts)
@@ -328,26 +330,37 @@ with tab2:
 
     st.markdown("---")
     
-    # 4. COMMENT CONFIGURATION & EXECUTION
+    # 4. COMMENT CONFIGURATION
     if st.session_state.selected_posts:
-        if "results" not in st.session_state: st.session_state.results = []
-        
         st.write("### 📝 Configure Comments")
+        if "results" not in st.session_state: st.session_state.results = []
+        if "refresh_key" not in st.session_state: st.session_state.refresh_key = 0
+
         for post_id, post in st.session_state.selected_posts.items():
             if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
             
-            # Smart Fill
+            # Callback
+            def update_comment_callback(pid):
+                selected_cat = st.session_state[f"temp_sel_{pid}"]
+                if selected_cat != "-- Select Category --":
+                    st.session_state[f"comm_{pid}"] = [st.session_state.comment_templates[selected_cat]]
+                    st.session_state.refresh_key += 1
+            
             if "comment_templates" in st.session_state:
-                st.selectbox("Smart Fill", ["-- Select --"] + list(st.session_state.comment_templates.keys()), 
-                             key=f"temp_sel_{post_id}", on_change=lambda pid=post_id: st.session_state.update({f"comm_{pid}": [st.session_state.comment_templates[st.session_state[f"temp_sel_{pid}"]]]}) if st.session_state[f"temp_sel_{pid}"] != "-- Select --" else None)
+                st.selectbox(f"Smart Fill (Category)", ["-- Select Category --"] + list(st.session_state.comment_templates.keys()), 
+                             key=f"temp_sel_{post_id}", on_change=update_comment_callback, args=(post_id,))
             
             for i, val in enumerate(st.session_state[f"comm_{post_id}"]):
-                st.session_state[f"comm_{post_id}"][i] = st.text_area(f"Line #{i+1}", value=val, key=f"area_{post_id}_{i}")
+                st.session_state[f"comm_{post_id}"][i] = st.text_area(f"Line #{i+1}", value=val, key=f"area_{post_id}_{i}_{st.session_state.refresh_key}")
+            
+            if st.button("➕ Add Line", key=f"add_{post_id}"):
+                st.session_state[f"comm_{post_id}"].append(""); st.rerun()
 
+        # 5. EXECUTION & STATUS TRACKING
         if st.button("🚀 GO NOW", type="primary"):
             st.session_state.results = []
             for post_id in st.session_state.selected_posts:
-                for msg in st.session_state[f"comm_{post_id}"]:
+                for msg in st.session_state.get(f"comm_{post_id}", []):
                     if msg.strip():
                         res = requests.post(f"https://graph.facebook.com/v21.0/{post_id}/comments", 
                                             data={'message': msg, 'access_token': target_token})
@@ -621,6 +634,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
