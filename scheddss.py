@@ -578,6 +578,21 @@ with tab4:
                         continue
                     
                     try:
+
+                        # 3. ADD 'is_reel' TO YOUR FINISH PHASE
+                        final_res = requests.post(
+                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                            data={
+                              'access_token': target_token, 
+                              'upload_phase': 'finish', 
+                              'upload_session_id': session_id,
+                              'description': row['POST DESCRIPTION'],
+                              'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
+                              'published': False,
+                              'is_reel': 'true' if is_reel else 'false' # <--- HERE IS THE FIX
+                            }
+                        ).json()
+
                         # 1. INITIATE
                         init_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
@@ -619,6 +634,7 @@ with tab4:
                 st.divider()
                 st.success(f"Finished! Processed {len(selected_rows)} posts.")
                 st.table(pd.DataFrame(results))
+
 
 
 
