@@ -275,6 +275,13 @@ with tab1:
                     st.error(f"Critical System Error: {e}")
 
 # ------ TAB 2-------
+import streamlit as st
+import pandas as pd
+import requests
+from datetime import datetime
+
+# (Ensure this is in your main imports at the top of your file)
+
 with tab2:
     st.subheader("💬 Smart Commenter")
     
@@ -294,7 +301,7 @@ with tab2:
         except:
             st.session_state.sc_posts = []
 
-    # 2. CSV UPLOADER (Smart Fill Database)
+    # 2. CSV UPLOADER
     st.write("---")
     uploaded_file = st.file_uploader("📂 Upload Comment CSV (Template Library)", type="csv")
     if uploaded_file:
@@ -323,21 +330,24 @@ with tab2:
 
     st.markdown("---")
     
-    # 4. COMMENT CONFIGURATION WITH SMART FILL
+    # 4. COMMENT CONFIGURATION
     if st.session_state.selected_posts:
         st.write("### 📝 Configure Comments")
         for post_id, post in st.session_state.selected_posts.items():
             formatted_time = datetime.now().strftime("%Y-%m-%d: %I:%M %p")
             st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:40]}` | *{formatted_time}*")
             
+            # Initialize if not present
+            if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
+            
             # Smart Fill Dropdown
             if "comment_templates" in st.session_state:
                 selected_cat = st.selectbox(f"Smart Fill (Category)", ["-- Select Category --"] + list(st.session_state.comment_templates.keys()), key=f"sel_cat_{post_id}")
                 if selected_cat != "-- Select Category --":
+                    # This updates the list in session_state, triggering the text_area to refresh
                     st.session_state[f"comm_{post_id}"] = [st.session_state.comment_templates[selected_cat]]
             
-            # Editable Text Area
-            if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
+            # The editable text area
             for i, val in enumerate(st.session_state[f"comm_{post_id}"]):
                 st.session_state[f"comm_{post_id}"][i] = st.text_area(f"Comment Line #{i+1}", value=val, key=f"area_{post_id}_{i}")
             
@@ -615,6 +625,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
