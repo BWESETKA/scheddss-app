@@ -331,41 +331,42 @@ with tab2:
 
     st.markdown("---")
     
-    # 4. COMMENT CONFIGURATION WITH CALLBACK
+   # 4. COMMENT CONFIGURATION
     if st.session_state.selected_posts:
         st.write("### 📝 Configure Comments")
-        
-        # Helper function to handle selection
-        def update_comment(pid):
-            cat = st.session_state[f"sel_cat_{pid}"]
-            if cat != "-- Select Category --":
-                st.session_state[f"comm_{pid}"] = [st.session_state.comment_templates[cat]]
-
         for post_id, post in st.session_state.selected_posts.items():
             formatted_time = datetime.now().strftime("%Y-%m-%d: %I:%M %p")
             st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:40]}` | *{formatted_time}*")
             
-            # Ensure initialization
+            # 1. Ensure list is initialized
             if f"comm_{post_id}" not in st.session_state: 
                 st.session_state[f"comm_{post_id}"] = [""]
             
-            # Smart Fill Dropdown with on_change callback
+            # 2. Smart Fill Dropdown
             if "comment_templates" in st.session_state:
+                # We use a temp key for the selection to avoid conflicts
+                def update_comment_callback(pid):
+                    selected_cat = st.session_state[f"temp_sel_{pid}"]
+                    if selected_cat != "-- Select Category --":
+                        st.session_state[f"comm_{pid}"] = [st.session_state.comment_templates[selected_cat]]
+                
                 st.selectbox(
                     f"Smart Fill (Category)", 
                     ["-- Select Category --"] + list(st.session_state.comment_templates.keys()), 
-                    key=f"sel_cat_{post_id}",
-                    on_change=update_comment,
+                    key=f"temp_sel_{post_id}",
+                    on_change=update_comment_callback,
                     args=(post_id,)
                 )
             
-            # Editable Text Area (linked to session state)
+            # 3. Editable Text Area - This now forces the display of whatever is in the list
             for i, val in enumerate(st.session_state[f"comm_{post_id}"]):
-                st.session_state[f"comm_{post_id}"][i] = st.text_area(
+                # The 'value' argument here is critical; it forces the update
+                new_val = st.text_area(
                     f"Comment Line #{i+1}", 
                     value=st.session_state[f"comm_{post_id}"][i], 
                     key=f"area_{post_id}_{i}"
                 )
+                st.session_state[f"comm_{post_id}"][i] = new_val
             
             if st.button("➕ Add Line", key=f"add_{post_id}"):
                 st.session_state[f"comm_{post_id}"].append("")
@@ -642,6 +643,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
