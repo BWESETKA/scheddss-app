@@ -275,99 +275,78 @@ with tab1:
 with tab2:
     st.subheader("💬 Smart Commenter")
     
-    # 1. INITIALIZATION: Fetch posts
+    # Custom CSS for compact 6-column grid
+    st.markdown("""
+        <style>
+        div[data-testid="stHorizontalBlock"] {
+            gap: 0.2rem !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+    
+    # 1. FETCH POSTS
     if "sc_posts" not in st.session_state:
         try:
-            # Added fields=full_picture to ensure we get the image
             posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture,created_time&limit=50&access_token={target_token}"
             st.session_state.sc_posts = requests.get(posts_url).json().get('data', [])
         except:
             st.session_state.sc_posts = []
 
-    # 2. PAGINATION LOGIC
-    posts_per_page = 6
+    # 2. PAGINATION (6 cards per row, 3 rows = 18 cards per page)
+    cards_per_page = 18
     if "sc_page" not in st.session_state: st.session_state.sc_page = 0
-    total_pages = max(1, (len(st.session_state.sc_posts) + posts_per_page - 1) // posts_per_page)
+    total_pages = max(1, (len(st.session_state.sc_posts) + cards_per_page - 1) // cards_per_page)
     
-    start_idx = st.session_state.sc_page * posts_per_page
-    end_idx = start_idx + posts_per_page
+    start_idx = st.session_state.sc_page * cards_per_page
+    page_posts = st.session_state.sc_posts[start_idx : start_idx + cards_per_page]
     
-    # 3. POST GRID (CARD BOXES)
-    st.write("### 🎯 Select Posts to Comment")
-    cols = st.columns(3)
-    
+    # 3. GRID RENDER (3 rows of 6)
     if "selected_posts" not in st.session_state: st.session_state.selected_posts = {}
+    
+    for row in range(3): # 3 rows
+        cols = st.columns(6, gap="small")
+        for col_idx in range(6): # 6 columns
+            idx = (row * 6) + col_idx
+            if idx < len(page_posts):
+                post = page_posts[idx]
+                with cols[col_idx]:
+                    with st.container(border=True, height=220):
+                        img_url = post.get('full_picture')
+                        if img_url: st.image(img_url, width=100)
+                        st.write(f"**{post.get('message', 'Post')[:15]}...**")
+                        
+                        is_checked = st.checkbox("Select", key=f"sel_{post['id']}", 
+                                                 value=post['id'] in st.session_state.selected_posts)
+                        if is_checked: st.session_state.selected_posts[post['id']] = post
+                        elif post['id'] in st.session_state.selected_posts: del st.session_state.selected_posts[post['id']]
 
-    for i, post in enumerate(st.session_state.sc_posts[start_idx:end_idx]):
-        with cols[i % 3]:
-            with st.container(border=True): # The Card Box look
-                # SAFETY CHECK: Only try to load if the image URL exists
-                img_url = post.get('full_picture')
-                if img_url:
-                    st.image(img_url, width=150)
-                else:
-                    st.write("*(No Image)*")
-                    
-                st.write(f"**{post.get('message', 'Media Post')[:20]}...**")
-                st.caption(f"Posted: {post.get('created_time', '')[:10]}")
-                
-                # Selection logic
-                is_checked = st.checkbox("Select Post", key=f"sel_{post['id']}", 
-                                         value=post['id'] in st.session_state.selected_posts)
-                if is_checked:
-                    st.session_state.selected_posts[post['id']] = post
-                elif post['id'] in st.session_state.selected_posts:
-                    del st.session_state.selected_posts[post['id']]
-
-    # Pagination controls
+    # Pagination
     nav_c1, nav_c2, nav_c3 = st.columns([1, 4, 1])
-    if nav_c1.button("⬅️ Prev"):
-        st.session_state.sc_page = max(0, st.session_state.sc_page - 1)
-        st.rerun()
-    if nav_c3.button("Next ➡️"):
-        st.session_state.sc_page = min(total_pages - 1, st.session_state.sc_page + 1)
-        st.rerun()
+    if nav_c1.button("⬅️"): st.session_state.sc_page = max(0, st.session_state.sc_page - 1); st.rerun()
+    if nav_c3.button("➡️"): st.session_state.sc_page = min(total_pages - 1, st.session_state.sc_page + 1); st.rerun()
 
     st.markdown("---")
 
-    # 4. DYNAMIC COMMENT CONFIGURATION
+    # 4. COMMENT CONFIGURATION
     if st.session_state.selected_posts:
-        st.write("### 📝 Configure Comments for Selected Posts")
-        
         for post_id, post in st.session_state.selected_posts.items():
-            # Force horizontal title display
-            st.markdown(f"**Selected:** `{post.get('message', 'Media Post')[:50]}`")
+            st.markdown(f"**Target:** `{post.get('message', 'Media Post')[:50]}`")
+            if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
             
-            # Initialize comment list for this specific post if not exists
-            if f"comm_list_{post_id}" not in st.session_state:
-                st.session_state[f"comm_list_{post_id}"] = [""]
+            for i, val in enumerate(st.session_state[f"comm_{post_id}"]):
+                st.session_state[f"comm_{post_id}"][i] = st.text_area(f"Line #{i+1}", value=val, key=f"area_{post_id}_{i}")
             
-            # Text areas for each comment
-            for i, val in enumerate(st.session_state[f"comm_list_{post_id}"]):
-                st.session_state[f"comm_list_{post_id}"][i] = st.text_area(
-                    f"Comment Line #{i+1}", 
-                    value=val, 
-                    key=f"area_{post_id}_{i}"
-                )
-            
-            if st.button("➕ Add Another Line", key=f"add_{post_id}"):
-                st.session_state[f"comm_list_{post_id}"].append("")
-                st.rerun()
+            if st.button("➕ Add Line", key=f"add_{post_id}"):
+                st.session_state[f"comm_{post_id}"].append(""); st.rerun()
 
         # 5. EXECUTION
-        if st.button("🚀 EXECUTE SMART COMMENTS", type="primary"):
-            progress = st.progress(0)
-            for idx, post_id in enumerate(st.session_state.selected_posts.keys()):
-                comments = [c for c in st.session_state[f"comm_list_{post_id}"] if c.strip()]
-                for msg in comments:
-                    requests.post(f"https://graph.facebook.com/v21.0/{post_id}/comments", 
-                                  data={'message': msg, 'access_token': target_token})
-                progress.progress((idx + 1) / len(st.session_state.selected_posts))
-            
-            st.success("All selected comments posted successfully!")
-            st.session_state.selected_posts = {}
-            time.sleep(2)
-            st.rerun()
+        if st.button("🚀 GO NOW", type="primary"):
+            for post_id, post in st.session_state.selected_posts.items():
+                for msg in st.session_state[f"comm_{post_id}"]:
+                    if msg.strip():
+                        requests.post(f"https://graph.facebook.com/v21.0/{post_id}/comments", 
+                                      data={'message': msg, 'access_token': target_token})
+            st.success("Comments live!"); st.session_state.selected_posts = {}; st.rerun()
             
 # --- TAB 3: THE FULL MANAGEMENT QUEUE (COMPLETE) ---
 with tab3:
@@ -631,6 +610,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
