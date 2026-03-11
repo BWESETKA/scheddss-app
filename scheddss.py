@@ -544,13 +544,10 @@ with tab4:
     import time
     
     st.subheader("📂 Bulk CSV Asset Manager")
-
-    # 1. ADD THIS TOGGLE BELOW SUBHEADER
-     st.subheader("📂 Bulk CSV Asset Manager")
-     is_reel = st.toggle("Post as Reel (Video Only)", value=True) 
-     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)  
     
-    # 1. FILE UPLOADER WITH COUNTER
+    # FUNCTIONAL TOGGLE: True sets asset_type to 'REEL', False uses default
+    is_reel = st.toggle("Post as Reel (Video Only)", value=True)
+    
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
     if uploaded_videos:
         st.info(f"You have selected **{len(uploaded_videos)}** video(s) for processing.")
@@ -576,6 +573,9 @@ with tab4:
             else:
                 progress_bar = st.progress(0, text="Starting bulk upload...")
                 
+                # Determine asset type based on toggle
+                asset_type = 'REEL' if is_reel else 'POST'
+                
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
                     file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
                     if not file_obj:
@@ -583,21 +583,6 @@ with tab4:
                         continue
                     
                     try:
-
-                        # 3. ADD 'is_reel' TO YOUR FINISH PHASE
-                        final_res = requests.post(
-                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                            data={
-                              'access_token': target_token, 
-                              'upload_phase': 'finish', 
-                              'upload_session_id': session_id,
-                              'description': row['POST DESCRIPTION'],
-                              'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
-                              'published': False,
-                              'is_reel': 'true' if is_reel else 'false' # <--- HERE IS THE FIX
-                            }
-                        ).json()
-
                         # 1. INITIATE
                         init_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
@@ -612,14 +597,17 @@ with tab4:
                             files={'video_file_chunk': file_obj.getvalue()}
                         )
                         
-                        # 3. FINISH
+                        # 3. FINISH (FUNCTIONAL REEL LOGIC)
                         final_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={
-                                'access_token': target_token, 'upload_phase': 'finish', 
-                                'upload_session_id': session_id, 'description': row['POST DESCRIPTION'],
+                                'access_token': target_token, 
+                                'upload_phase': 'finish', 
+                                'upload_session_id': session_id,
+                                'description': row['POST DESCRIPTION'],
                                 'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
-                                'published': False
+                                'published': False,
+                                'video_asset_type': asset_type
                             }
                         ).json()
                         
@@ -632,17 +620,11 @@ with tab4:
                     except Exception as e:
                         results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
                     
-                    # Update progress
                     progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
 
-                # 4. SHOW SUMMARY TABLE
                 st.divider()
                 st.success(f"Finished! Processed {len(selected_rows)} posts.")
                 st.table(pd.DataFrame(results))
-
-
-
-
 
 
 
