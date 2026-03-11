@@ -541,9 +541,9 @@ with tab4:
     import pandas as pd
     import requests
     import os
+    import time
     
     st.subheader("📂 Bulk CSV Asset Manager")
-    
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
     
@@ -552,37 +552,33 @@ with tab4:
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
     if uploaded_videos and map_csv and cap_csv:
+        # Load and Merge Data
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
-        df_map['CATEGORY'] = df_map['CATEGORY'].astype(str).str.strip()
-        df_cap['CATEGORY'] = df_cap['CATEGORY'].astype(str).str.strip()
-        
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
-        uploaded_names = [f.name for f in uploaded_videos]
-        master_df['Status'] = master_df.apply(lambda r: "✅ Found" if str(r['FILE NAME']).strip() in uploaded_names else "❌ Missing", axis=1)
-
+        # UI Table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
+            results = []
+            
             for _, row in edited_df[edited_df['Select'] == True].iterrows():
-                if row['Status'] == "✅ Found":
-                    file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
-                    
-                    # 1. INITIATE SESSION
+                file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
+                if not file_obj:
+                    results.append(f"❌ Missing file: {row['FILE NAME']}")
+                    continue
+                
+                try:
+                    # 1. INITIATE
                     init_res = requests.post(
                         f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                         data={'access_token': target_token, 'upload_phase': 'start', 'file_size': file_obj.size}
                     ).json()
-                    
-                    if 'upload_session_id' not in init_res:
-                        st.error(f"Init Error: {init_res}")
-                        continue
-                    
                     session_id = init_res['upload_session_id']
                     
-                    # 2. TRANSFER DATA
+                    # 2. TRANSFER
                     requests.post(
                         f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                         data={'access_token': target_token, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
@@ -593,16 +589,30 @@ with tab4:
                     final_res = requests.post(
                         f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                         data={
-                            'access_token': target_token, 
-                            'upload_phase': 'finish', 
-                            'upload_session_id': session_id,
-                            'description': row['POST DESCRIPTION'],
+                            'access_token': target_token, 'upload_phase': 'finish', 
+                            'upload_session_id': session_id, 'description': row['POST DESCRIPTION'],
                             'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp())
                         }
                     ).json()
                     
-                    st.success(f"Queued: {row['FILE NAME']} (FB ID: {final_res.get('id', 'N/A')})")
-            st.rerun()
+                    vid_id = final_res.get('id')
+                    if vid_id:
+                        # 4. POLL STATUS (Crucial Step)
+                        time.sleep(2) # Give FB a moment to start processing
+                        status_res = requests.get(f"https://graph.facebook.com/v21.0/{vid_id}?fields=status&access_token={target_token}").json()
+                        status = status_res.get('status', {}).get('video_status')
+                        results.append(f"✅ Queued: {row['FILE NAME']} (Status: {status})")
+                    else:
+                        results.append(f"⚠️ API Warning: {final_res}")
+                        
+                except Exception as e:
+                    results.append(f"❌ Exception on {row['FILE NAME']}: {str(e)}")
+            
+            # Show all results
+            for res in results:
+                if "✅" in res: st.success(res)
+                elif "⚠️" in res: st.warning(res)
+                else: st.error(res)
 
 
 
