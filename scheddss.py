@@ -379,14 +379,21 @@ with tab2:
                 st.session_state[f"comm_{post_id}"].append("")
                 st.rerun()
 
-        # 5. EXECUTION
+       # 5. EXECUTION & STATUS TRACKING
         if st.button("🚀 GO NOW", type="primary"):
+            st.session_state.results = []
             for post_id in st.session_state.selected_posts:
                 for msg in st.session_state.get(f"comm_{post_id}", []):
                     if msg.strip():
-                        requests.post(f"https://graph.facebook.com/v21.0/{post_id}/comments", 
-                                      data={'message': msg, 'access_token': target_token})
-            st.success("Comments live!"); st.session_state.selected_posts = {}; st.rerun()
+                        res = requests.post(f"https://graph.facebook.com/v21.0/{post_id}/comments", 
+                                            data={'message': msg, 'access_token': target_token})
+                        status = "✅ Success" if res.status_code == 200 else f"❌ Failed ({res.status_code})"
+                        st.session_state.results.append(f"Post {post_id[:5]}: {status}")
+            st.rerun()
+
+        # Display Results
+        for r in st.session_state.results:
+            st.write(r)
             
 # --- TAB 3: THE FULL MANAGEMENT QUEUE (COMPLETE) ---
 with tab3:
@@ -650,6 +657,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
