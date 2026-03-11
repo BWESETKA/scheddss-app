@@ -537,20 +537,17 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER (RESUMABLE UPLOAD FLOW) ---
+import pandas as pd
+import requests
+import pytz # Ensure you have installed: pip install pytz
+
 with tab4:
-    import pandas as pd
-    import requests
-    import os
-    import time
-    
     st.subheader("📂 Bulk CSV Asset Manager")
-    
-    # FUNCTIONAL TOGGLE: True sets asset_type to 'REEL', False uses default
     is_reel = st.toggle("Post as Reel (Video Only)", value=True)
-    
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
+    
     if uploaded_videos:
-        st.info(f"You have selected **{len(uploaded_videos)}** video(s) for processing.")
+        st.info(f"Selected: **{len(uploaded_videos)}** video(s).")
 
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
@@ -569,12 +566,13 @@ with tab4:
             selected_rows = edited_df[edited_df['Select'] == True]
             
             if selected_rows.empty:
-                st.warning("Please select at least one row from the table.")
+                st.warning("Please select at least one row.")
             else:
                 progress_bar = st.progress(0, text="Starting bulk upload...")
-                
-                # Determine asset type based on toggle
                 asset_type = 'REEL' if is_reel else 'POST'
+                
+                # Define timezone for Philippines
+                ph_tz = pytz.timezone('Asia/Manila')
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
                     file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
@@ -597,7 +595,12 @@ with tab4:
                             files={'video_file_chunk': file_obj.getvalue()}
                         )
                         
-                        # 3. FINISH (FUNCTIONAL REEL LOGIC)
+                        # 3. FINISH (FIXED TIMEZONE LOGIC)
+                        # Parse the local time, localize it to Manila, then convert to UTC
+                        local_dt = pd.to_datetime(row['SCHEDULE TIME/DATE'])
+                        localized_dt = ph_tz.localize(local_dt)
+                        utc_timestamp = int(localized_dt.astimezone(pytz.utc).timestamp())
+                        
                         final_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={
@@ -605,17 +608,14 @@ with tab4:
                                 'upload_phase': 'finish', 
                                 'upload_session_id': session_id,
                                 'description': row['POST DESCRIPTION'],
-                                'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
+                                'scheduled_publish_time': utc_timestamp, # Corrected UTC timestamp
                                 'published': False,
                                 'video_asset_type': asset_type
                             }
                         ).json()
                         
                         vid_id = final_res.get('id')
-                        if vid_id:
-                            results.append({"File": row['FILE NAME'], "Status": "✅ Success"})
-                        else:
-                            results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
+                        results.append({"File": row['FILE NAME'], "Status": "✅ Success" if vid_id else f"⚠️ {final_res}"})
                             
                     except Exception as e:
                         results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
@@ -625,6 +625,7 @@ with tab4:
                 st.divider()
                 st.success(f"Finished! Processed {len(selected_rows)} posts.")
                 st.table(pd.DataFrame(results))
+
 
 
 
