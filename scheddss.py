@@ -275,15 +275,15 @@ with tab1:
 with tab2:
     st.subheader("💬 Smart Commenter")
     
-    # Custom CSS for compact 6-column grid
+    # CSS to force the grid layout and remove internal scroll
     st.markdown("""
         <style>
-        div[data-testid="stHorizontalBlock"] {
-            gap: 0.2rem !important;
+        [data-testid="stVerticalBlock"] > [style*="flex-direction: column"] > [data-testid="stVerticalBlock"] {
+            gap: 0.1rem;
         }
         </style>
         """, unsafe_allow_html=True)
-    
+
     # 1. FETCH POSTS
     if "sc_posts" not in st.session_state:
         try:
@@ -292,7 +292,7 @@ with tab2:
         except:
             st.session_state.sc_posts = []
 
-    # 2. PAGINATION (6 cards per row, 3 rows = 18 cards per page)
+    # 2. PAGINATION (18 cards per page: 6 per row x 3 rows)
     cards_per_page = 18
     if "sc_page" not in st.session_state: st.session_state.sc_page = 0
     total_pages = max(1, (len(st.session_state.sc_posts) + cards_per_page - 1) // cards_per_page)
@@ -300,20 +300,23 @@ with tab2:
     start_idx = st.session_state.sc_page * cards_per_page
     page_posts = st.session_state.sc_posts[start_idx : start_idx + cards_per_page]
     
-    # 3. GRID RENDER (3 rows of 6)
+    # 3. RENDER GRID (3 rows of 6)
     if "selected_posts" not in st.session_state: st.session_state.selected_posts = {}
     
-    for row in range(3): # 3 rows
+    for row in range(3):
         cols = st.columns(6, gap="small")
-        for col_idx in range(6): # 6 columns
+        for col_idx in range(6):
             idx = (row * 6) + col_idx
             if idx < len(page_posts):
                 post = page_posts[idx]
                 with cols[col_idx]:
-                    with st.container(border=True, height=220):
+                    # Taller static container - NO INTERNAL SCROLL
+                    with st.container(border=True, height=280): 
                         img_url = post.get('full_picture')
-                        if img_url: st.image(img_url, width=100)
-                        st.write(f"**{post.get('message', 'Post')[:15]}...**")
+                        if img_url: st.image(img_url, width=110)
+                        
+                        st.write(f"**{post.get('message', 'Media Post')[:15]}...**")
+                        st.caption(f"{post.get('created_time', '')[:10]}")
                         
                         is_checked = st.checkbox("Select", key=f"sel_{post['id']}", 
                                                  value=post['id'] in st.session_state.selected_posts)
@@ -327,10 +330,14 @@ with tab2:
 
     st.markdown("---")
 
-    # 4. COMMENT CONFIGURATION
+    # 4. DYNAMIC COMMENT CONFIGURATION
     if st.session_state.selected_posts:
+        st.write("### 📝 Configure Comments")
         for post_id, post in st.session_state.selected_posts.items():
-            st.markdown(f"**Target:** `{post.get('message', 'Media Post')[:50]}`")
+            # Time format as requested
+            formatted_time = datetime.now().strftime("%Y-%m-%d: %I:%M %p")
+            st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:60]}` | *{formatted_time}*")
+            
             if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
             
             for i, val in enumerate(st.session_state[f"comm_{post_id}"]):
@@ -610,6 +617,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
