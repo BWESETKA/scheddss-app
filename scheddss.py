@@ -275,18 +275,11 @@ with tab1:
 with tab2:
     st.subheader("💬 Smart Commenter")
     
-    # CSS: Forces all containers to have a uniform height, 
-    # preventing internal scrolling and ensuring uniform card sizes.
+    # CSS: Tall static cards, no internal scroll
     st.markdown("""
         <style>
-        [data-testid="stVerticalBlock"] {
-            gap: 0.5rem;
-        }
-        /* Make the card container tall and static */
-        [data-testid="stExpander"] { border: 1px solid #ccc; }
-        .stContainer > div > div {
-            min-height: 350px !important; 
-        }
+        [data-testid="stVerticalBlock"] { gap: 0.5rem; }
+        .stContainer > div > div { min-height: 350px !important; }
         </style>
         """, unsafe_allow_html=True)
 
@@ -298,10 +291,16 @@ with tab2:
         except:
             st.session_state.sc_posts = []
 
-    # 2. GRID RENDER (3 rows x 6 columns)
+    # 2. CSV UPLOADER (Smart Fill Database)
+    st.write("---")
+    uploaded_file = st.file_uploader("📂 Upload Comment CSV (Template Library)", type="csv")
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.session_state.comment_templates = dict(zip(df['CATEGORY'], df['POST DESCRIPTION']))
+    
+    # 3. GRID RENDER (3 rows x 6 columns)
     if "selected_posts" not in st.session_state: st.session_state.selected_posts = {}
     
-    # We loop for 3 rows
     for row in range(3):
         cols = st.columns(6, gap="small")
         for col_idx in range(6):
@@ -309,17 +308,10 @@ with tab2:
             if idx < len(st.session_state.sc_posts):
                 post = st.session_state.sc_posts[idx]
                 with cols[col_idx]:
-                    # REMOVED 'height' parameter to prevent internal scroll
                     with st.container(border=True):
-                        img_url = post.get('full_picture')
-                        if img_url: 
-                            st.image(img_url, use_container_width=True)
-                        
+                        if post.get('full_picture'): st.image(post['full_picture'], use_container_width=True)
                         st.write(f"**{post.get('message', 'Media')[:15]}...**")
-                        
-                        # Date format logic
-                        raw_time = post.get('created_time', '')[:10]
-                        st.caption(f"{raw_time} - 9:30 AM")
+                        st.caption(f"{post.get('created_time', '')[:10]} - 9:30 AM")
                         
                         is_checked = st.checkbox("Select", key=f"sel_{post['id']}", 
                                                  value=post['id'] in st.session_state.selected_posts)
@@ -328,23 +320,31 @@ with tab2:
 
     st.markdown("---")
     
-    # 3. COMMENT SECTION
+    # 4. COMMENT CONFIGURATION WITH SMART FILL
     if st.session_state.selected_posts:
         st.write("### 📝 Configure Comments")
         for post_id, post in st.session_state.selected_posts.items():
             formatted_time = datetime.now().strftime("%Y-%m-%d: %I:%M %p")
-            st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:60]}` | *{formatted_time}*")
+            st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:40]}` | *{formatted_time}*")
             
+            # Smart Fill Dropdown
+            if "comment_templates" in st.session_state:
+                selected_cat = st.selectbox(f"Smart Fill (Category)", ["-- Select Category --"] + list(st.session_state.comment_templates.keys()), key=f"sel_cat_{post_id}")
+                if selected_cat != "-- Select Category --":
+                    st.session_state[f"comm_{post_id}"] = [st.session_state.comment_templates[selected_cat]]
+            
+            # Editable Text Area
             if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
             for i, val in enumerate(st.session_state[f"comm_{post_id}"]):
-                st.session_state[f"comm_{post_id}"][i] = st.text_area(f"Line #{i+1}", value=val, key=f"area_{post_id}_{i}")
+                st.session_state[f"comm_{post_id}"][i] = st.text_area(f"Comment Line #{i+1}", value=val, key=f"area_{post_id}_{i}")
             
             if st.button("➕ Add Line", key=f"add_{post_id}"):
                 st.session_state[f"comm_{post_id}"].append(""); st.rerun()
 
+        # 5. EXECUTION
         if st.button("🚀 GO NOW", type="primary"):
-            for post_id, post in st.session_state.selected_posts.items():
-                for msg in st.session_state[f"comm_{post_id}"]:
+            for post_id in st.session_state.selected_posts:
+                for msg in st.session_state.get(f"comm_{post_id}", []):
                     if msg.strip():
                         requests.post(f"https://graph.facebook.com/v21.0/{post_id}/comments", 
                                       data={'message': msg, 'access_token': target_token})
@@ -612,6 +612,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
