@@ -337,17 +337,24 @@ with tab2:
     st.markdown("---")
     
    # 4. COMMENT CONFIGURATION
-    if st.session_state.selected_posts:
+   if st.session_state.selected_posts:
         st.write("### 📝 Configure Comments")
-        
-        # Track a refresh count for the text areas to force UI updates
+        if "results" not in st.session_state: st.session_state.results = []
         if "refresh_key" not in st.session_state: st.session_state.refresh_key = 0
 
         for post_id, post in st.session_state.selected_posts.items():
-            formatted_time = datetime.now().strftime("%Y-%m-%d: %I:%M %p")
-            st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:40]}` | *{formatted_time}*")
+            # --- ACCURATE TIME PARSING ---
+            raw_time = post.get('created_time', '')
+            # We parse the FB timestamp and format it to your preferred look
+            dt = datetime.strptime(raw_time, "%Y-%m-%dT%H:%M:%S+0000")
+            display_time = dt.strftime("%Y-%m-%d: %I:%M %p")
             
-            if f"comm_{post_id}" not in st.session_state: st.session_state[f"comm_{post_id}"] = [""]
+            # --- DISPLAY WITH ACCURATE TIME ---
+            st.markdown(f"**Post:** `{post.get('message', 'Media Post')[:40]}` | *{display_time}*")
+            
+            if f"comm_{post_id}" not in st.session_state: 
+                st.session_state[f"comm_{post_id}"] = [""]
+
             
             # The Callback to update the content AND the refresh key
             def update_comment_callback(pid):
@@ -657,6 +664,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
