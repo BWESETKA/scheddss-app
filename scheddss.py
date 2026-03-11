@@ -544,78 +544,81 @@ with tab4:
     import time
     
     st.subheader("📂 Bulk CSV Asset Manager")
-    is_reel = st.toggle("Post as Reel (Video Only)", value=True)
-    uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
     
+    # 1. FILE UPLOADER WITH COUNTER
+    uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
+    if uploaded_videos:
+        st.info(f"You have selected **{len(uploaded_videos)}** video(s) for processing.")
+
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
 
     if uploaded_videos and map_csv and cap_csv:
-        # Load and Merge Data
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
         
-        # UI Table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary"):
             results = []
+            selected_rows = edited_df[edited_df['Select'] == True]
             
-            for _, row in edited_df[edited_df['Select'] == True].iterrows():
-                file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
-                if not file_obj:
-                    results.append(f"❌ Missing file: {row['FILE NAME']}")
-                    continue
+            if selected_rows.empty:
+                st.warning("Please select at least one row from the table.")
+            else:
+                progress_bar = st.progress(0, text="Starting bulk upload...")
                 
-                try:
-                    # 1. INITIATE
-                    init_res = requests.post(
-                        f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                        data={'access_token': target_token, 'upload_phase': 'start', 'file_size': file_obj.size}
-                    ).json()
-                    session_id = init_res['upload_session_id']
+                for i, (_, row) in enumerate(selected_rows.iterrows()):
+                    file_obj = next((f for f in uploaded_videos if f.name == str(row['FILE NAME']).strip()), None)
+                    if not file_obj:
+                        results.append({"File": row['FILE NAME'], "Status": "❌ Missing file"})
+                        continue
                     
-                    # 2. TRANSFER
-                    requests.post(
-                        f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                        data={'access_token': target_token, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
-                        files={'video_file_chunk': file_obj.getvalue()}
-                    )
-                    
-                    # 3. FINISH (UPDATED FOR SCHEDULING)
-                    final_res = requests.post(
-                       f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                       data={
-                           'access_token': target_token, 
-                           'upload_phase': 'finish', 
-                           'upload_session_id': session_id,
-                           'description': row['POST DESCRIPTION'],
-                           'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
-                           'published': False  # <--- THIS IS THE MISSING KEY
-                      }
-                    ).json()
-                    
-                    vid_id = final_res.get('id')
-                    if vid_id:
-                        # 4. POLL STATUS (Crucial Step)
-                        time.sleep(2) # Give FB a moment to start processing
-                        status_res = requests.get(f"https://graph.facebook.com/v21.0/{vid_id}?fields=status&access_token={target_token}").json()
-                        status = status_res.get('status', {}).get('video_status')
-                        results.append(f"✅ Queued: {row['FILE NAME']} (Status: {status})")
-                    else:
-                        results.append(f"⚠️ API Warning: {final_res}")
+                    try:
+                        # 1. INITIATE
+                        init_res = requests.post(
+                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                            data={'access_token': target_token, 'upload_phase': 'start', 'file_size': file_obj.size}
+                        ).json()
+                        session_id = init_res['upload_session_id']
                         
-                except Exception as e:
-                    results.append(f"❌ Exception on {row['FILE NAME']}: {str(e)}")
-            
-            # Show all results
-            for res in results:
-                if "✅" in res: st.success(res)
-                elif "⚠️" in res: st.warning(res)
-                else: st.error(res)
+                        # 2. TRANSFER
+                        requests.post(
+                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                            data={'access_token': target_token, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
+                            files={'video_file_chunk': file_obj.getvalue()}
+                        )
+                        
+                        # 3. FINISH
+                        final_res = requests.post(
+                            f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
+                            data={
+                                'access_token': target_token, 'upload_phase': 'finish', 
+                                'upload_session_id': session_id, 'description': row['POST DESCRIPTION'],
+                                'scheduled_publish_time': int(pd.to_datetime(row['SCHEDULE TIME/DATE']).timestamp()),
+                                'published': False
+                            }
+                        ).json()
+                        
+                        vid_id = final_res.get('id')
+                        if vid_id:
+                            results.append({"File": row['FILE NAME'], "Status": "✅ Success"})
+                        else:
+                            results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
+                            
+                    except Exception as e:
+                        results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
+                    
+                    # Update progress
+                    progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
+
+                # 4. SHOW SUMMARY TABLE
+                st.divider()
+                st.success(f"Finished! Processed {len(selected_rows)} posts.")
+                st.table(pd.DataFrame(results))
 
 
 
