@@ -287,14 +287,22 @@ with tab2:
         </style>
         """, unsafe_allow_html=True)
 
-    # 1. FETCH POSTS
-    if "sc_posts" not in st.session_state:
+    # 1. FETCH POSTS (FIXED: Added page-specific key)
+    # We store posts in a dictionary keyed by the page ID
+    if "sc_posts_cache" not in st.session_state:
+        st.session_state.sc_posts_cache = {}
+
+    if target_id not in st.session_state.sc_posts_cache:
         try:
             posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture,created_time&limit=50&access_token={target_token}"
             response = requests.get(posts_url).json()
-            st.session_state.sc_posts = response.get('data', [])
+            # Store posts specifically for this page ID
+            st.session_state.sc_posts_cache[target_id] = response.get('data', [])
         except:
-            st.session_state.sc_posts = []
+            st.session_state.sc_posts_cache[target_id] = []
+
+    # Use the specific page's data
+    current_posts = st.session_state.sc_posts_cache[target_id]
 
     # 2. CSV UPLOADER
     st.write("---")
@@ -637,6 +645,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
