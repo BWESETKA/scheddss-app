@@ -552,7 +552,8 @@ with tab4:
     import os
     import time
     from datetime import timedelta
-    
+
+    st.markdown(f"### 📍 Current Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
     
     # NEW: Dropdown with a "Choose..." placeholder to block the button
@@ -647,6 +648,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
