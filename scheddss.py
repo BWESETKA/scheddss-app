@@ -318,8 +318,9 @@ with tab2:
         cols = st.columns(6, gap="small")
         for col_idx in range(6):
             idx = (row * 6) + col_idx
-            if idx < len(st.session_state.sc_posts):
-                post = st.session_state.sc_posts[idx]
+            # FIXED: Used current_posts instead of the missing st.session_state.sc_posts
+            if idx < len(current_posts):
+                post = current_posts[idx]
                 with cols[col_idx]:
                     with st.container(border=True):
                         if post.get('full_picture'): st.image(post['full_picture'], use_container_width=True)
@@ -645,6 +646,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
