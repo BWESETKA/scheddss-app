@@ -306,7 +306,7 @@ with tab2:
 
     # 2. CSV UPLOADER
     st.write("---")
-    st.markdown(f"### 📍 Current Page: **{selected_page_name}**")
+    st.markdown(f"### 📍 Current Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     uploaded_file = st.file_uploader("📂 Upload Comment CSV (Template Library)", type="csv")
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
@@ -647,6 +647,7 @@ with tab4:
         # Friendly reminder if the button is locked
         if not is_ready:
             st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
+
 
 
 
