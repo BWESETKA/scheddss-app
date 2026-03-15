@@ -614,8 +614,13 @@ with tab4:
                         )
                         
                         # 3. FINISH (FIXED TIMEZONE + STRICT ASSET TYPE)
-                        raw_date_str = str(row['SCHEDULE TIME/DATE']).replace(":", " ", 1).upper()
-                        local_dt = pd.to_datetime(raw_date_str)
+                        # 1. Clean the string: replace dashes/colons with space, uppercase it, strip extra spaces
+                        raw_date_str = str(row['SCHEDULE TIME/DATE']).replace("-", "/").replace(":", " ", 1).upper().strip()
+                        
+                        # 2. Parse using dayfirst=True to handle DD/MM/YYYY vs YYYY-MM-DD
+                        local_dt = pd.to_datetime(raw_date_str, dayfirst=True)
+                        
+                        # 3. Convert to UTC (Assuming user input is PH Time)
                         utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
                         
                         final_res = requests.post(
