@@ -614,7 +614,7 @@ with tab4:
                         )
                         
                         # 3. FINISH (FIXED TIMEZONE + STRICT ASSET TYPE)
-                        local_dt = pd.to_datetime(row['SCHEDULE TIME/DATE'])
+                        local_dt = pd.to_datetime(row['SCHEDULE TIME/DATE'], format='%Y-%m-%d: %I:%M %p')
                         utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
                         
                         final_res = requests.post(
