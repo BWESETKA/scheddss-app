@@ -614,6 +614,10 @@ with tab4:
                         )
                         
                         # 3. FINISH (FIXED TIMEZONE + STRICT ASSET TYPE)
+
+                        # row.iloc[2] grabs the 3rd column (index 2), regardless of what it's named
+                        raw_date_val = str(row.iloc[2])
+
                         # 1. Clean the string: replace dashes/colons with space, uppercase it, strip extra spaces
                         raw_date_str = str(row['SCHEDULE TIME/DATE']).replace("-", "/").replace(":", " ", 1).upper().strip()
                         
