@@ -655,13 +655,6 @@ with tab4:
 
                     wait_time = random.randint(5, 20)
                     time.sleep(wait_time)
-                            
-                    except Exception as e:
-                        results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
-                    progress_bar.progress((i + 1) / len(selected_rows))
-                st.table(pd.DataFrame(results))
-
-
 
 
 
