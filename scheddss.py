@@ -656,7 +656,15 @@ with tab4:
                     progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
 
 
-
+                # --- TABLE ---
+                st.divider()
+                st.success(f"Finished! Processed {len(selected_rows)} posts.")
+                
+                # Convert list of dictionaries to a clean Pandas DataFrame
+                results_df = pd.DataFrame(results)
+                
+                # Display as a table
+                st.table(results_df)
 
 
 
