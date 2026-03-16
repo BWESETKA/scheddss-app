@@ -584,17 +584,19 @@ with tab4:
         master_df.insert(0, 'Select', False)
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # 2. Execution Logic
+        # --- 2. EXECUTION LOGIC (LIVE UPDATING) ---
         is_type_selected = selected_type != "Choose..."
         if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_type_selected):
-            # Filter for selected and found files only
             selected_rows = edited_df[(edited_df['Select'] == True) & (edited_df['File Status'] == "✅ Found")]
             
             if selected_rows.empty:
-                st.warning("No valid files selected. Please check your selections and file statuses.")
+                st.warning("No valid files selected.")
             else:
                 progress_bar = st.progress(0)
                 status_log = st.empty()
+                
+                # Create a placeholder to hold the results table
+                results_table_placeholder = st.empty()
                 results = []
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
@@ -631,23 +633,26 @@ with tab4:
                                 'video_asset_type': 'REEL' if selected_type == "Reel" else 'POST'
                             }).json()
 
-                        results.append({"File": file_name, "Result": "✅ Success" if 'id' in finish else f"⚠️ {finish.get('error', {}).get('message', 'Failed')}"})
-
+                        # --- LIVE UPDATE ---
+                        # We append the result for THIS specific file
+                        result_msg = "✅ Success" if 'id' in finish else f"⚠️ {finish.get('error', {}).get('message', 'Failed')}"
+                        results.append({"File": file_name, "Result": result_msg})
+                        
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # Mandatory random cooldown to prevent spam block
+                    # Refresh the table immediately after each submission
+                    results_table_placeholder.table(pd.DataFrame(results))
+                    
+                    # Random Cooldown
                     wait_time = random.randint(4, 11)
                     for remaining in range(wait_time, 0, -1):
-                        status_log.warning(f"⏳ Cooldown: Waiting {remaining}s to prevent spam block...")
+                        status_log.warning(f"⏳ Cooldown for {file_name}: Waiting {remaining}s...")
                         time.sleep(1)
                     
                     progress_bar.progress((i + 1) / len(selected_rows))
 
-                # Final Summary
-                success_count = sum(1 for r in results if "✅ Success" in r['Result'])
-                st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded.")
-                st.table(pd.DataFrame(results))
+                st.success(f"🎉 Batch processing complete.")
                     
 
 
