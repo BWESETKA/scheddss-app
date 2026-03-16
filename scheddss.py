@@ -551,7 +551,6 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER ---
-# --- TAB 4: BULK CSV ASSET MANAGER ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
@@ -588,14 +587,14 @@ with tab4:
         # 2. Execution Logic
         is_type_selected = selected_type != "Choose..."
         if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_type_selected):
-            # Filter for selected and found files only
             selected_rows = edited_df[(edited_df['Select'] == True) & (edited_df['File Status'] == "✅ Found")]
             
             if selected_rows.empty:
-                st.warning("No valid files selected. Please check your selections and file statuses.")
+                st.warning("No valid files selected.")
             else:
                 progress_bar = st.progress(0)
                 status_log = st.empty()
+                results_table_placeholder = st.empty() # Placeholder for live table
                 results = []
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
@@ -637,18 +636,18 @@ with tab4:
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # Mandatory random cooldown to prevent spam block
+                    # Update table live after every video
+                    results_table_placeholder.table(pd.DataFrame(results))
+                    
+                    # Cooldown
                     wait_time = random.randint(4, 11)
                     for remaining in range(wait_time, 0, -1):
-                        status_log.warning(f"⏳ Cooldown: Waiting {remaining}s to prevent spam block...")
+                        status_log.warning(f"⏳ Cooldown for {file_name}: Waiting {remaining}s...")
                         time.sleep(1)
                     
                     progress_bar.progress((i + 1) / len(selected_rows))
 
-                # Final Summary
-                success_count = sum(1 for r in results if "✅ Success" in r['Result'])
-                st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded.")
-                st.table(pd.DataFrame(results))
+                st.success(f"🎉 All {len(selected_rows)} files processed.")
                     
 
 
