@@ -632,10 +632,10 @@ with tab4:
                         final_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={
-                                'access_token': target_token, 
+                                'access_token': PERMANENT_TOKEN,
                                 'upload_phase': 'finish', 
                                 'upload_session_id': session_id,
-                                'description': row['POST DESCRIPTION'],
+                                'description': row['CAPTION'],
                                 'scheduled_publish_time': utc_timestamp,
                                 'published': False,
                                 'video_asset_type': asset_type
