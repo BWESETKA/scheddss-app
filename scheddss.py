@@ -632,7 +632,7 @@ with tab4:
                         final_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={
-                                'access_token': PERMANENT_TOKEN, 
+                                'access_token': target_token, 
                                 'upload_phase': 'finish', 
                                 'upload_session_id': session_id,
                                 'description': row['POST DESCRIPTION'],
@@ -648,15 +648,12 @@ with tab4:
                         else:
                             results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
                             
-                        except Exception as e:
-                            results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
+                    except Exception as e:
+                        results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
                     
+                    # Random delay added here as requested
+                    time.sleep(random.randint(5, 20))
                     progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
-
-                    wait_time = random.randint(5, 20)
-                    time.sleep(wait_time)
-
-
 
 
 
