@@ -558,10 +558,6 @@ with tab4:
     
     # 1. Selection Inputs
     selected_type = st.selectbox("Select Content Type:", ["Choose...", "Reel", "Standard Post"])
-    
-    # Logic: is_ready is True only if a valid selection is made
-    is_ready = selected_type != "Choose..."
-    
     uploaded_videos = st.file_uploader("Select Video Files:", accept_multiple_files=True)
     
     # Real-time count notification
@@ -572,14 +568,16 @@ with tab4:
     map_csv = col1.file_uploader("Upload: production_log.csv", type=['csv'])
     cap_csv = col2.file_uploader("Upload: vidscaption.csv", type=['csv'])
 
-    # 2. Process only if files are uploaded
-    if uploaded_videos and map_csv and cap_csv:
+    # 2. Process only if all components are ready
+    if uploaded_videos and map_csv and cap_csv and selected_type != "Choose...":
         
         # Load CSVs and force column names to avoid parsing errors
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         
-        # Force column renaming
+        # Force column renaming to match expected internal structure
+        # Map: ORIG, FILE_NAME, CATEGORY, SCHEDULE_TIME
+        # Cap: CATEGORY, CAPTION
         df_map.columns = ['ORIG', 'FILE_NAME', 'CATEGORY', 'SCHEDULE_TIME']
         df_cap.columns = ['CATEGORY', 'CAPTION']
         
@@ -594,9 +592,11 @@ with tab4:
         master_df.insert(0, 'Select', True)
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # 3. Execution Logic
-        # disabled=not is_ready greys out the button if no Reel/Post type is selected
-        if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_ready):
+        # 3. Execution Logic with Disabled Button
+        # We check if selected_type is NOT the default choice
+        is_type_selected = selected_type != "Choose..."
+        
+        if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_type_selected):
             selected_rows = edited_df[edited_df['Select'] == True]
             
             if selected_rows.empty:
@@ -649,7 +649,7 @@ with tab4:
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # 4. Mandatory cooldown (3-11s as requested)
+                    # Shortened Cooldown (as requested)
                     wait_time = random.randint(3, 11)
                     for remaining in range(wait_time, 0, -1):
                         status_log.warning(f"Cooldown: Waiting {remaining}s...")
@@ -661,8 +661,6 @@ with tab4:
                 success_count = sum(1 for r in results if "✅ Success" in r['Result'])
                 st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded.")
                 st.table(pd.DataFrame(results))
-
-
 
 
 
