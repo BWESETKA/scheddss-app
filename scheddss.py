@@ -551,12 +551,11 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER ---
-# --- TAB 4: BULK CSV SCHEDULER (DEFAULT: UNSELECTED) ---
+# --- TAB 4: BULK CSV SCHEDULER (UPDATED & CLEANED) ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
     
-    # 1. Selection Inputs
     selected_type = st.selectbox("Select Content Type:", ["Choose...", "Reel", "Standard Post"])
     uploaded_videos = st.file_uploader("Select Video Files:", accept_multiple_files=True)
     
@@ -567,31 +566,24 @@ with tab4:
     map_csv = col1.file_uploader("Upload: production_log.csv", type=['csv'])
     cap_csv = col2.file_uploader("Upload: vidscaption.csv", type=['csv'])
 
-    # 2. Process only if all components are ready
     if uploaded_videos and map_csv and cap_csv:
-        # Load CSVs
+        # Load and Clean
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         
-        # Force column names to be consistent regardless of CSV headers
+        # Force column names to be consistent
         df_map.columns = ['ORIG', 'FILE_NAME', 'CATEGORY', 'SCHEDULE_TIME']
         df_cap.columns = ['CATEGORY', 'CAPTION']
         
-        # Merge
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         
         # Add selection column (Defaults to False)
         master_df.insert(0, 'Select', False)
         
-        # Add file validation
-        uploaded_names = [f.name for f in uploaded_videos]
-        master_df['File Status'] = master_df['FILE_NAME'].apply(lambda x: "✅ Found" if str(x).strip() in uploaded_names else "❌ Missing")
-        
         # UI Table
-        st.write("### 📝 Select files to upload:")
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # 3. Execution Button (Greyed out until a type is selected)
+        # Execution Logic
         is_type_selected = selected_type != "Choose..."
         if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_type_selected):
             selected_rows = edited_df[edited_df['Select'] == True]
@@ -612,18 +604,19 @@ with tab4:
                         continue
 
                     try:
-                        # API Upload Logic
+                        # 1. Initiate
                         init = requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}).json()
                         
                         if 'upload_session_id' not in init:
-                            raise Exception("Upload start failed")
+                            raise Exception(f"API Error: {init.get('error', {}).get('message', 'Unknown')}")
                             
+                        # 2. Transfer
                         requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': init['upload_session_id']},
                             files={'video_file_chunk': file_obj.getvalue()})
                             
-                        # Finalize
+                        # 3. Finish
                         local_dt = pd.to_datetime(str(row['SCHEDULE_TIME']).strip(), dayfirst=True)
                         utc_ts = int((local_dt - timedelta(hours=8)).timestamp())
                         
@@ -638,20 +631,25 @@ with tab4:
                                 'video_asset_type': 'REEL' if selected_type == "Reel" else 'POST'
                             }).json()
 
-                        results.append({"File": file_name, "Result": "✅ Success" if 'id' in finish else "⚠️ Failed"})
+                        results.append({"File": file_name, "Result": "✅ Success" if 'id' in finish else f"⚠️ {finish.get('error', {}).get('message', 'Failed')}"})
 
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # 4. Mandatory cooldown to avoid Code 368
-                    wait_time = random.randint(3, 11)
+                    # RANDOM COOLDOWN (Updates status log dynamically)
+                    wait_time = random.randint(30, 60)
                     for remaining in range(wait_time, 0, -1):
-                        status_log.warning(f"Cooldown: Waiting {remaining}s...")
+                        status_log.warning(f"⏳ Cooldown: Waiting {remaining}s to prevent spam block...")
                         time.sleep(1)
+                    
+                    # Update progress
                     progress_bar.progress((i + 1) / len(selected_rows))
 
-                st.success(f"🎉 Uploads finished: {sum(1 for r in results if 'Success' in r['Result'])}/{len(selected_rows)} success.")
+                # Final Summary Notification
+                success_count = sum(1 for r in results if "✅ Success" in r['Result'])
+                st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded successfully.")
                 st.table(pd.DataFrame(results))
+                    
 
 
 
