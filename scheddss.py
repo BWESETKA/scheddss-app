@@ -647,7 +647,7 @@ with tab4:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
                     # 4. Mandatory cooldown (60-120s) to bypass Code 368 Spam block
-                    wait_time = random.randint(60, 120)
+                    wait_time = random.randint(3, 11)
                     for remaining in range(wait_time, 0, -1):
                         status_log.warning(f"Cooldown: Waiting {remaining}s to prevent spam block...")
                         time.sleep(1)
