@@ -637,7 +637,7 @@ with tab4:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
                     # Mandatory random cooldown to prevent spam block
-                    wait_time = random.randint(30, 60)
+                    wait_time = random.randint(4, 11)
                     for remaining in range(wait_time, 0, -1):
                         status_log.warning(f"⏳ Cooldown: Waiting {remaining}s to prevent spam block...")
                         time.sleep(1)
