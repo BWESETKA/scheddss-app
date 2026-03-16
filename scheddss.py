@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import time
 import json
 from supabase import create_client, Client
+import random
 
 # --- 1. CONFIG & SESSION ---
 CLIENT_ID = "910661605032071"
@@ -641,8 +642,19 @@ with tab4:
                             }
                         ).json()
                         
-                        results.append({"File": row['FILE NAME'], "Status": "✅ Success"})
-                        time.sleep(3) # Anti-bot delay
+                        vid_id = final_res.get('id')
+                        if vid_id:
+                            results.append({"File": row['FILE NAME'], "Status": f"✅ Success ({selected_type})"})
+                        else:
+                            results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
+                            
+                    except Exception as e:
+                        results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
+                    
+                    progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
+
+                    wait_time = random.randint(5, 20)
+                    time.sleep(wait_time)
                             
                     except Exception as e:
                         results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
