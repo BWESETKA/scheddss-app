@@ -551,11 +551,12 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER ---
-# --- TAB 4: BULK CSV SCHEDULER (RESTORED WITH STATUS) ---
+# --- TAB 4: BULK CSV ASSET MANAGER ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
     
+    # 1. Inputs
     selected_type = st.selectbox("Select Content Type:", ["Choose...", "Reel", "Standard Post"])
     uploaded_videos = st.file_uploader("Select Video Files:", accept_multiple_files=True)
     
@@ -567,50 +568,56 @@ with tab4:
     cap_csv = col2.file_uploader("Upload: vidscaption.csv", type=['csv'])
 
     if uploaded_videos and map_csv and cap_csv:
-        # Load and Force Rename Headers
+        # Load and Force Standard Column Names
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         df_map.columns = ['ORIG', 'FILE_NAME', 'CATEGORY', 'SCHEDULE_TIME']
         df_cap.columns = ['CATEGORY', 'CAPTION']
         
+        # Merge
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
-        master_df.insert(0, 'Select', False)
         
+        # Status Logic
+        uploaded_names = [f.name.strip() for f in uploaded_videos]
+        master_df['File Status'] = master_df['FILE_NAME'].apply(lambda x: "✅ Found" if str(x).strip() in uploaded_names else "❌ Missing")
+        
+        # UI Setup
+        master_df.insert(0, 'Select', False)
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
+        # 2. Execution Logic
         is_type_selected = selected_type != "Choose..."
         if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_type_selected):
-            selected_rows = edited_df[edited_df['Select'] == True]
+            # Filter for selected and found files only
+            selected_rows = edited_df[(edited_df['Select'] == True) & (edited_df['File Status'] == "✅ Found")]
             
             if selected_rows.empty:
-                st.warning("Please select at least one row.")
+                st.warning("No valid files selected. Please check your selections and file statuses.")
             else:
                 progress_bar = st.progress(0)
-                status_log = st.empty() # This is the status indicator
+                status_log = st.empty()
                 results = []
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
                     file_name = str(row['FILE_NAME']).strip()
-                    file_obj = next((f for f in uploaded_videos if f.name == file_name), None)
+                    file_obj = next((f for f in uploaded_videos if f.name.strip() == file_name), None)
                     
-                    if not file_obj:
-                        results.append({"File": file_name, "Result": "❌ Missing File"})
-                        continue
-
                     try:
-                        # Displaying the current upload status
-                        status_log.info(f"⏳ Currently uploading: **{file_name}**...")
+                        status_log.info(f"⏳ Uploading: **{file_name}**...")
                         
+                        # A. Initiate
                         init = requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}).json()
                         
                         if 'upload_session_id' not in init:
-                            raise Exception(f"API Error: {init.get('error', {}).get('message', 'Unknown')}")
+                            raise Exception(init.get('error', {}).get('message', 'Init Failed'))
                             
+                        # B. Transfer
                         requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': init['upload_session_id']},
                             files={'video_file_chunk': file_obj.getvalue()})
                             
+                        # C. Finish
                         local_dt = pd.to_datetime(str(row['SCHEDULE_TIME']).strip(), dayfirst=True)
                         utc_ts = int((local_dt - timedelta(hours=8)).timestamp())
                         
@@ -630,15 +637,17 @@ with tab4:
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # Status log for Cooldown
-                    wait_time = random.randint(3, 11)
+                    # Mandatory random cooldown to prevent spam block
+                    wait_time = random.randint(30, 60)
                     for remaining in range(wait_time, 0, -1):
                         status_log.warning(f"⏳ Cooldown: Waiting {remaining}s to prevent spam block...")
                         time.sleep(1)
                     
                     progress_bar.progress((i + 1) / len(selected_rows))
 
-                st.success(f"🎉 Process Finished: {sum(1 for r in results if 'Success' in r['Result'])}/{len(selected_rows)} success.")
+                # Final Summary
+                success_count = sum(1 for r in results if "✅ Success" in r['Result'])
+                st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded.")
                 st.table(pd.DataFrame(results))
                     
 
