@@ -550,14 +550,19 @@ with tab3:
 
 
 
-# --- TAB 4: BULK CSV SCHEDULER (RESUMABLE UPLOAD FLOW) ---
-# --- TAB 4: ROBUST POSITIONAL CSV SCHEDULER ---
+# --- TAB 4: BULK CSV SCHEDULER ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager (Header-Ignore Mode)")
     
-    selected_type = st.selectbox("Select Content Type:", ["Choose...", "Reel", "Standard Post"])
+    # --- UPDATED UPLOADER WITH REAL-TIME COUNT ---
     uploaded_videos = st.file_uploader("Select Video Files:", accept_multiple_files=True)
+    
+    if uploaded_videos:
+        count = len(uploaded_videos)
+        st.success(f"✅ You have successfully uploaded {count} video file(s)!")
+    else:
+        st.info("ℹ️ Please drag and drop your video files above.")
     
     col1, col2 = st.columns(2)
     map_csv = col1.file_uploader("Upload: production_log.csv", type=['csv'])
