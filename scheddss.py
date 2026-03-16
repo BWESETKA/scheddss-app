@@ -551,6 +551,7 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER ---
+# --- TAB 4: BULK CSV ASSET MANAGER ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
@@ -584,19 +585,17 @@ with tab4:
         master_df.insert(0, 'Select', False)
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # --- 2. EXECUTION LOGIC (LIVE UPDATING) ---
+        # 2. Execution Logic
         is_type_selected = selected_type != "Choose..."
         if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_type_selected):
+            # Filter for selected and found files only
             selected_rows = edited_df[(edited_df['Select'] == True) & (edited_df['File Status'] == "✅ Found")]
             
             if selected_rows.empty:
-                st.warning("No valid files selected.")
+                st.warning("No valid files selected. Please check your selections and file statuses.")
             else:
                 progress_bar = st.progress(0)
                 status_log = st.empty()
-                
-                # Create a placeholder to hold the results table
-                results_table_placeholder = st.empty()
                 results = []
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
@@ -633,26 +632,23 @@ with tab4:
                                 'video_asset_type': 'REEL' if selected_type == "Reel" else 'POST'
                             }).json()
 
-                        # --- LIVE UPDATE ---
-                        # We append the result for THIS specific file
-                        result_msg = "✅ Success" if 'id' in finish else f"⚠️ {finish.get('error', {}).get('message', 'Failed')}"
-                        results.append({"File": file_name, "Result": result_msg})
-                        
+                        results.append({"File": file_name, "Result": "✅ Success" if 'id' in finish else f"⚠️ {finish.get('error', {}).get('message', 'Failed')}"})
+
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # Refresh the table immediately after each submission
-                    results_table_placeholder.table(pd.DataFrame(results))
-                    
-                    # Random Cooldown
+                    # Mandatory random cooldown to prevent spam block
                     wait_time = random.randint(4, 11)
                     for remaining in range(wait_time, 0, -1):
-                        status_log.warning(f"⏳ Cooldown for {file_name}: Waiting {remaining}s...")
+                        status_log.warning(f"⏳ Cooldown: Waiting {remaining}s to prevent spam block...")
                         time.sleep(1)
                     
                     progress_bar.progress((i + 1) / len(selected_rows))
 
-                st.success(f"🎉 Batch processing complete.")
+                # Final Summary
+                success_count = sum(1 for r in results if "✅ Success" in r['Result'])
+                st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded.")
+                st.table(pd.DataFrame(results))
                     
 
 
