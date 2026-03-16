@@ -558,6 +558,10 @@ with tab4:
     
     # 1. Selection Inputs
     selected_type = st.selectbox("Select Content Type:", ["Choose...", "Reel", "Standard Post"])
+    
+    # Logic: is_ready is True only if a valid selection is made
+    is_ready = selected_type != "Choose..."
+    
     uploaded_videos = st.file_uploader("Select Video Files:", accept_multiple_files=True)
     
     # Real-time count notification
@@ -568,16 +572,14 @@ with tab4:
     map_csv = col1.file_uploader("Upload: production_log.csv", type=['csv'])
     cap_csv = col2.file_uploader("Upload: vidscaption.csv", type=['csv'])
 
-    # 2. Process only if all components are ready
-    if uploaded_videos and map_csv and cap_csv and selected_type != "Choose...":
+    # 2. Process only if files are uploaded
+    if uploaded_videos and map_csv and cap_csv:
         
         # Load CSVs and force column names to avoid parsing errors
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         
-        # Force column renaming to match expected internal structure
-        # Map: ORIG, FILE_NAME, CATEGORY, SCHEDULE_TIME
-        # Cap: CATEGORY, CAPTION
+        # Force column renaming
         df_map.columns = ['ORIG', 'FILE_NAME', 'CATEGORY', 'SCHEDULE_TIME']
         df_cap.columns = ['CATEGORY', 'CAPTION']
         
@@ -593,7 +595,8 @@ with tab4:
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
         # 3. Execution Logic
-        if st.button("🚀 EXECUTE BULK UPLOAD", type="primary"):
+        # disabled=not is_ready greys out the button if no Reel/Post type is selected
+        if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_ready):
             selected_rows = edited_df[edited_df['Select'] == True]
             
             if selected_rows.empty:
@@ -646,10 +649,10 @@ with tab4:
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # 4. Mandatory cooldown (60-120s) to bypass Code 368 Spam block
+                    # 4. Mandatory cooldown (3-11s as requested)
                     wait_time = random.randint(3, 11)
                     for remaining in range(wait_time, 0, -1):
-                        status_log.warning(f"Cooldown: Waiting {remaining}s to prevent spam block...")
+                        status_log.warning(f"Cooldown: Waiting {remaining}s...")
                         time.sleep(1)
                     
                     progress_bar.progress((i + 1) / len(selected_rows))
