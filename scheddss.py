@@ -551,59 +551,60 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER ---
+# --- TAB 4: REDESIGNED BULK CSV SCHEDULER ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
-    st.subheader("📂 Bulk CSV Asset Manager (Header-Ignore Mode)")
+    st.subheader("📂 Bulk CSV Asset Manager")
     
-    # --- UPDATED UPLOADER WITH REAL-TIME COUNT ---
+    # 1. Selection Inputs
+    selected_type = st.selectbox("Select Content Type:", ["Choose...", "Reel", "Standard Post"])
     uploaded_videos = st.file_uploader("Select Video Files:", accept_multiple_files=True)
     
+    # Real-time count notification
     if uploaded_videos:
-        count = len(uploaded_videos)
-        st.success(f"✅ You have successfully uploaded {count} video file(s)!")
-    else:
-        st.info("ℹ️ Please drag and drop your video files above.")
+        st.success(f"✅ You have uploaded {len(uploaded_videos)} video file(s)!")
     
     col1, col2 = st.columns(2)
     map_csv = col1.file_uploader("Upload: production_log.csv", type=['csv'])
     cap_csv = col2.file_uploader("Upload: vidscaption.csv", type=['csv'])
 
-    if uploaded_videos and map_csv and cap_csv:
-        # 1. READ RAW (Ignore Header row)
-        df_map = pd.read_csv(map_csv, header=0) # Reads row 0 as header for labeling
-        df_cap = pd.read_csv(cap_csv, header=0)
+    # 2. Process only if all components are ready
+    if uploaded_videos and map_csv and cap_csv and selected_type != "Choose...":
         
-        # 2. RENAME POSITIONALLY (Forces column names to be generic)
-        # This prevents KeyError if the CSV header text changes
+        # Load CSVs and force column names to avoid parsing errors
+        df_map = pd.read_csv(map_csv)
+        df_cap = pd.read_csv(cap_csv)
+        
+        # Force column renaming to match expected internal structure
+        # Map: ORIG, FILE_NAME, CATEGORY, SCHEDULE_TIME
+        # Cap: CATEGORY, CAPTION
         df_map.columns = ['ORIG', 'FILE_NAME', 'CATEGORY', 'SCHEDULE_TIME']
         df_cap.columns = ['CATEGORY', 'CAPTION']
         
-        # 3. MERGE
+        # Merge
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         
-        # 4. FILE MATCHING (Positional index check)
+        # Check file availability
         uploaded_names = [f.name for f in uploaded_videos]
-        master_df['Status'] = master_df['FILE_NAME'].apply(lambda x: "✅ Ready" if str(x).strip() in uploaded_names else "❌ Missing File")
-        master_df.insert(1, 'Select', False)
+        master_df['Found'] = master_df['FILE_NAME'].apply(lambda x: "✅ Found" if str(x).strip() in uploaded_names else "❌ Missing")
         
+        # UI Table Editor
+        master_df.insert(0, 'Select', True)
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=(selected_type == "Choose...")):
+        # 3. Execution Logic
+        if st.button("🚀 EXECUTE BULK UPLOAD", type="primary"):
             selected_rows = edited_df[edited_df['Select'] == True]
             
             if selected_rows.empty:
-                st.warning("Please select files.")
+                st.warning("Please select at least one file to process.")
             else:
                 progress_bar = st.progress(0)
                 status_log = st.empty()
                 results = []
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
-                    # Access by position/index instead of hardcoded strings
                     file_name = str(row['FILE_NAME']).strip()
-                    caption_text = str(row['CAPTION']).strip()
-                    date_raw = str(row['SCHEDULE_TIME']).strip()
-                    
                     file_obj = next((f for f in uploaded_videos if f.name == file_name), None)
                     
                     if not file_obj:
@@ -611,20 +612,22 @@ with tab4:
                         continue
 
                     try:
-                        # Upload Logic
+                        status_log.info(f"⏳ Uploading: {file_name}")
+                        
+                        # A. Initiate
                         init = requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}).json()
                         
                         if 'upload_session_id' not in init:
-                            raise Exception(f"API Error: {init.get('error', {}).get('message')}")
+                            raise Exception(f"API Reject: {init.get('error', {}).get('message')}")
                         
-                        # Transfer
+                        # B. Transfer
                         requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': init['upload_session_id']},
                             files={'video_file_chunk': file_obj.getvalue()})
                         
-                        # Finish
-                        local_dt = pd.to_datetime(date_raw, dayfirst=True)
+                        # C. Finish
+                        local_dt = pd.to_datetime(str(row['SCHEDULE_TIME']).strip(), dayfirst=True)
                         utc_ts = int((local_dt - timedelta(hours=8)).timestamp())
                         
                         finish = requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
@@ -632,7 +635,7 @@ with tab4:
                                 'access_token': PERMANENT_TOKEN,
                                 'upload_phase': 'finish',
                                 'upload_session_id': init['upload_session_id'],
-                                'description': caption_text,
+                                'description': str(row['CAPTION']),
                                 'scheduled_publish_time': utc_ts,
                                 'published': False,
                                 'video_asset_type': 'REEL' if selected_type == "Reel" else 'POST'
@@ -643,16 +646,18 @@ with tab4:
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # MANDATORY 60s cooldown to keep your account safe
+                    # 4. Mandatory cooldown (60-120s) to bypass Code 368 Spam block
                     wait_time = random.randint(60, 120)
                     for remaining in range(wait_time, 0, -1):
-                        status_log.warning(f"Cooldown: Waiting {remaining}s to avoid FB spam block...")
+                        status_log.warning(f"Cooldown: Waiting {remaining}s to prevent spam block...")
                         time.sleep(1)
                     
                     progress_bar.progress((i + 1) / len(selected_rows))
 
+                # Summary Notification
+                success_count = sum(1 for r in results if "✅ Success" in r['Result'])
+                st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded.")
                 st.table(pd.DataFrame(results))
-
 
 
 
