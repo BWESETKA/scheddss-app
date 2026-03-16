@@ -551,7 +551,6 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER ---
-# --- TAB 4: BULK CSV ASSET MANAGER ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
@@ -638,7 +637,7 @@ with tab4:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
                     # Mandatory random cooldown to prevent spam block
-                    wait_time = random.randint(4, 11)
+                    wait_time = random.randint(30, 60)
                     for remaining in range(wait_time, 0, -1):
                         status_log.warning(f"⏳ Cooldown: Waiting {remaining}s to prevent spam block...")
                         time.sleep(1)
