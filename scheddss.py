@@ -558,6 +558,10 @@ with tab4:
     is_ready = selected_type != "Choose Content Type..."
     
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
+
+    if uploaded_videos:
+        st.success(f"You have uploaded **{len(uploaded_videos)}** video file(s).")
+        
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
