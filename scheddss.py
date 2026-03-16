@@ -621,7 +621,7 @@ with tab4:
                         raw_date_val = str(row.iloc[3])
                         raw_date_str = raw_date_val.replace("-", "/").replace(":", " ", 1).upper().strip()
                         local_dt = pd.to_datetime(raw_date_str, dayfirst=True)
-                        utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
+                        utc_timestamp = int((local_dt - timedelta(hours=8)).timesta
                         
                         final_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
