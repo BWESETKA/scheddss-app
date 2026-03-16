@@ -13,6 +13,7 @@ from supabase import create_client, Client
 CLIENT_ID = "910661605032071"
 CLIENT_SECRET = "a57ba995d5178d5ee80c3debba225138"
 REDIRECT_URI = "https://scheddss.streamlit.app/"
+PERMANENT_TOKEN = "EAAM8Pe16gIcBQ0xi5pZAxKsZAONNzezJIuMmMqCrFjoE99rkyzHFeX3fGNAwiZBTUD6NZAL4pHcSutrUbZBgqHdojDjTLna9rlBP7xicZAWoBJaQaQ1NRBymQ9F7ggoSAOhFbgcZB9nHZCZBPW6HjGM2FwLOyCBm8TDAUTKPdTrfAR5fxn3b9xNiMLreoQqoU"
 
 # --- SUPABASE CONFIG ---
 SUPABASE_URL = "https://elpwqqvgrdovocvkzgyl.supabase.co"
@@ -466,7 +467,7 @@ with tab3:
                                         
                                         requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data={
                                             'message': up_caption,
-                                            'access_token': target_token,
+                                            'access_token': PERMANENT_TOKEN,
                                             'attached_media': json.dumps([{'media_fbid': i} for i in new_mids]),
                                             'published': 'false',
                                             'scheduled_publish_time': up_unix
@@ -602,14 +603,14 @@ with tab4:
                         # 1. INITIATE
                         init_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                            data={'access_token': target_token, 'upload_phase': 'start', 'file_size': file_obj.size}
+                            data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}
                         ).json()
                         session_id = init_res['upload_session_id']
                         
                         # 2. TRANSFER
                         requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                            data={'access_token': target_token, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
+                            data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}
                             files={'video_file_chunk': file_obj.getvalue()}
                         )
                         
