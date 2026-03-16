@@ -652,7 +652,7 @@ with tab4:
                         results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
                     
                     # Random delay added here as requested
-                    time.sleep(random.randint(16, 47))
+                    time.sleep(random.randint(4, 12))
                     progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
 
 
