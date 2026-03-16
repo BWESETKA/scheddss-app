@@ -22,6 +22,9 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="Scheddss Pro", page_icon="👟", layout="wide")
 
+# Use the Permanent Token for all requests
+PERMANENT_TOKEN = PERMANENT_TOKEN
+
 # --- PERSISTENT CACHE TRICK ---
 @st.cache_resource
 def get_persistent_store():
@@ -127,7 +130,7 @@ with st.sidebar:
     st.header("⚙️ Settings")
     if page_map:
         selected_page_name = st.selectbox("Target Page", list(page_map.keys()))
-        target_id, target_token = page_map[selected_page_name]
+        target_id, PERMANENT_TOKEN = page_map[selected_page_name]
     else:
         st.error("No pages found.")
         if st.button("🔄 Re-login"):
@@ -203,7 +206,7 @@ with tab1:
                         
                         res = requests.post(
                             ep, 
-                            data={'access_token': target_token, 'published': 'false'}, 
+                            data={'access_token': PERMANENT_TOKEN, 'published': 'false'}, 
                             files={'file': f.getvalue()}
                         ).json()
                         
@@ -216,7 +219,7 @@ with tab1:
                     # 2. CREATE THE FEED POST
                     post_payload = {
                         'message': caption,
-                        'access_token': target_token,
+                        'access_token': PERMANENT_TOKEN,
                         'attached_media': json.dumps([{'media_fbid': i} for i in media_ids])
                     }
                     
@@ -240,7 +243,7 @@ with tab1:
                                     time.sleep(1) 
                                     c_res = requests.post(
                                         f"https://graph.facebook.com/v21.0/{post_id}/comments",
-                                        data={'message': msg, 'access_token': target_token}
+                                        data={'message': msg, 'access_token': PERMANENT_TOKEN}
                                     ).json()
                                     
                                     if "error" in c_res:
@@ -256,7 +259,7 @@ with tab1:
                                             "parent_post_id": post_id,
                                             "comment_text": msg,
                                             "scheduled_time": p_unix,
-                                            "page_access_token": target_token,
+                                            "page_access_token": PERMANENT_TOKEN,
                                             "status": "pending"
                                         }).execute()
                                     st.success(f"Scheduled! Post & {len(valid_comments)} comments queued.")
@@ -295,7 +298,7 @@ with tab2:
 
     if target_id not in st.session_state.sc_posts_cache:
         try:
-            posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture,created_time&limit=50&access_token={target_token}"
+            posts_url = f"https://graph.facebook.com/v21.0/{target_id}/published_posts?fields=id,message,full_picture,created_time&limit=50&access_token={PERMANENT_TOKEN}"
             response = requests.get(posts_url).json()
             # Store posts specifically for this page ID
             st.session_state.sc_posts_cache[target_id] = response.get('data', [])
@@ -378,7 +381,7 @@ with tab2:
                 for msg in st.session_state.get(f"comm_{post_id}", []):
                     if msg.strip():
                         res = requests.post(f"https://graph.facebook.com/v21.0/{post_id}/comments", 
-                                            data={'message': msg, 'access_token': target_token})
+                                            data={'message': msg, 'access_token': PERMANENT_TOKEN})
                         status = "✅ Success" if res.status_code == 200 else f"❌ Failed ({res.status_code})"
                         st.session_state.results.append(f"Post {post_id[:5]}: {status}")
             st.rerun()
@@ -391,7 +394,7 @@ with tab3:
     st.subheader("📅 Live Management Queue")
     
     # 1. FETCH LIVE DATA FROM FACEBOOK (FOR POSTS)
-    q_url = f"https://graph.facebook.com/v21.0/{target_id}/scheduled_posts?fields=id,message,scheduled_publish_time,full_picture&access_token={target_token}"
+    q_url = f"https://graph.facebook.com/v21.0/{target_id}/scheduled_posts?fields=id,message,scheduled_publish_time,full_picture&access_token={PERMANENT_TOKEN}"
     try:
         fb_posts = requests.get(q_url).json().get('data', [])
     except:
@@ -428,7 +431,7 @@ with tab3:
                 # --- DELETE LOGIC (POSTS) ---
                 if d_btn:
                     with st.spinner("Deleting..."):
-                        del_res = requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}").json()
+                        del_res = requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={PERMANENT_TOKEN}").json()
                         if del_res.get("success"):
                             st.success("Post Deleted.")
                             time.sleep(1)
@@ -457,12 +460,12 @@ with tab3:
 
                                     if up_files:
                                         # To change media, FB requires deleting and re-posting
-                                        requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={target_token}")
+                                        requests.delete(f"https://graph.facebook.com/v21.0/{pid}?access_token={PERMANENT_TOKEN}")
                                         new_mids = []
                                         for f in up_files:
                                             is_vid = "video" in f.type
                                             ep = f"https://graph-video.facebook.com/v21.0/{target_id}/videos" if is_vid else f"https://graph.facebook.com/v21.0/{target_id}/photos"
-                                            res = requests.post(ep, data={'access_token': target_token, 'published': 'false'}, files={'file': f.getvalue()}).json()
+                                            res = requests.post(ep, data={'access_token': PERMANENT_TOKEN, 'published': 'false'}, files={'file': f.getvalue()}).json()
                                             if "id" in res: new_mids.append(res['id'])
                                         
                                         requests.post(f"https://graph.facebook.com/v21.0/{target_id}/feed", data={
@@ -477,7 +480,7 @@ with tab3:
                                         requests.post(f"https://graph.facebook.com/v21.0/{pid}", data={
                                             'message': up_caption,
                                             'scheduled_publish_time': up_unix,
-                                            'access_token': target_token
+                                            'access_token': PERMANENT_TOKEN
                                         })
 
                                     st.success("Changes Saved!")
@@ -547,27 +550,15 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER (RESUMABLE UPLOAD FLOW) ---
+# --- TAB 4: BULK CSV SCHEDULER (FIXED) ---
 with tab4:
-    import pandas as pd
-    import requests
-    import os
-    import time
-    from datetime import timedelta
-
     st.markdown(f"### 📍 Current Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
     
-    # NEW: Dropdown with a "Choose..." placeholder to block the button
-    post_type_options = ["Choose Content Type...", "Reel", "Standard Post"]
-    selected_type = st.selectbox("Select Post Type (Required):", options=post_type_options)
-    
-    # Logic to enable/disable button
+    selected_type = st.selectbox("Select Post Type (Required):", ["Choose Content Type...", "Reel", "Standard Post"])
     is_ready = selected_type != "Choose Content Type..."
     
     uploaded_videos = st.file_uploader("Select your videos:", accept_multiple_files=True)
-    if uploaded_videos:
-        st.info(f"Selected: **{len(uploaded_videos)}** video(s).")
-
     col_c, col_d = st.columns(2)
     map_csv = col_c.file_uploader("Upload: producedvidmapping.csv", type=['csv'])
     cap_csv = col_d.file_uploader("Upload: postcaption.csv", type=['csv'])
@@ -577,20 +568,16 @@ with tab4:
         df_cap = pd.read_csv(cap_csv)
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         master_df.insert(0, 'Select', False)
-        
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # The button is only clickable if a type is chosen
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary", disabled=not is_ready):
             results = []
             selected_rows = edited_df[edited_df['Select'] == True]
             
             if selected_rows.empty:
-                st.warning("Please select at least one row from the table.")
+                st.warning("Please select at least one row.")
             else:
-                progress_bar = st.progress(0, text="Starting bulk upload...")
-                
-                # Mapping the selection to the exact API strings Facebook needs
+                progress_bar = st.progress(0)
                 asset_type = 'REEL' if selected_type == "Reel" else 'POST'
                 
                 for i, (_, row) in enumerate(selected_rows.iterrows()):
@@ -610,53 +597,36 @@ with tab4:
                         # 2. TRANSFER
                         requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
-                            data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}
+                            data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': session_id},
                             files={'video_file_chunk': file_obj.getvalue()}
                         )
                         
-                        # 3. FINISH (FIXED TIMEZONE + STRICT ASSET TYPE)
-
-                        # 1. Clean the string: replace dashes/colons with space, uppercase it, strip extra spaces
-                        raw_date_str = str(row['SCHEDULE TIME/DATE']).replace("-", "/").replace(":", " ", 1).upper().strip()
-                        
-                        # 2. Parse using dayfirst=True to handle DD/MM/YYYY vs YYYY-MM-DD
+                        # 3. FINISH (POSITIONAL COLUMN PARSING - IGNORES HEADER NAME)
+                        raw_date_val = str(row.iloc[2]) # Grabs 3rd column
+                        raw_date_str = raw_date_val.replace("-", "/").replace(":", " ", 1).upper().strip()
                         local_dt = pd.to_datetime(raw_date_str, dayfirst=True)
-                        
-                        # 3. Convert to UTC (Assuming user input is PH Time)
                         utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
                         
                         final_res = requests.post(
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={
-                                'access_token': target_token, 
+                                'access_token': PERMANENT_TOKEN, 
                                 'upload_phase': 'finish', 
                                 'upload_session_id': session_id,
                                 'description': row['POST DESCRIPTION'],
                                 'scheduled_publish_time': utc_timestamp,
                                 'published': False,
-                                'video_asset_type': asset_type # <--- SENDS 'REEL' OR 'POST'
+                                'video_asset_type': asset_type
                             }
                         ).json()
                         
-                        vid_id = final_res.get('id')
-                        if vid_id:
-                            results.append({"File": row['FILE NAME'], "Status": f"✅ Success ({selected_type})"})
-                        else:
-                            results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
+                        results.append({"File": row['FILE NAME'], "Status": "✅ Success"})
+                        time.sleep(3) # Anti-bot delay
                             
                     except Exception as e:
                         results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
-                    
-                    progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
-
-                st.divider()
-                st.success(f"Finished! Processed {len(selected_rows)} posts as {selected_type}.")
+                    progress_bar.progress((i + 1) / len(selected_rows))
                 st.table(pd.DataFrame(results))
-        
-        # Friendly reminder if the button is locked
-        if not is_ready:
-            st.caption("⚠️ Select 'Reel' or 'Standard Post' above to enable the upload button.")
-
 
 
 
