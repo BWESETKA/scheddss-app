@@ -618,7 +618,7 @@ with tab4:
                         )
                         
                         # 3. FINISH (POSITIONAL COLUMN PARSING - IGNORES HEADER NAME)
-                        raw_date_val = str(row.iloc[2]) # Grabs 3rd column
+                        raw_date_val = str(row.iloc[3])
                         raw_date_str = raw_date_val.replace("-", "/").replace(":", " ", 1).upper().strip()
                         local_dt = pd.to_datetime(raw_date_str, dayfirst=True)
                         utc_timestamp = int((local_dt - timedelta(hours=8)).timestamp())
