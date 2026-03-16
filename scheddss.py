@@ -551,7 +551,7 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER ---
-# --- TAB 4: REDESIGNED BULK CSV SCHEDULER ---
+# --- TAB 4: BULK CSV SCHEDULER (DEFAULT: UNSELECTED) ---
 with tab4:
     st.markdown(f"### 📍 Target Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
@@ -560,47 +560,44 @@ with tab4:
     selected_type = st.selectbox("Select Content Type:", ["Choose...", "Reel", "Standard Post"])
     uploaded_videos = st.file_uploader("Select Video Files:", accept_multiple_files=True)
     
-    # Real-time count notification
     if uploaded_videos:
-        st.success(f"✅ You have uploaded {len(uploaded_videos)} video file(s)!")
+        st.success(f"✅ You have {len(uploaded_videos)} video file(s) ready.")
     
     col1, col2 = st.columns(2)
     map_csv = col1.file_uploader("Upload: production_log.csv", type=['csv'])
     cap_csv = col2.file_uploader("Upload: vidscaption.csv", type=['csv'])
 
     # 2. Process only if all components are ready
-    if uploaded_videos and map_csv and cap_csv and selected_type != "Choose...":
-        
-        # Load CSVs and force column names to avoid parsing errors
+    if uploaded_videos and map_csv and cap_csv:
+        # Load CSVs
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         
-        # Force column renaming to match expected internal structure
-        # Map: ORIG, FILE_NAME, CATEGORY, SCHEDULE_TIME
-        # Cap: CATEGORY, CAPTION
+        # Force column names to be consistent regardless of CSV headers
         df_map.columns = ['ORIG', 'FILE_NAME', 'CATEGORY', 'SCHEDULE_TIME']
         df_cap.columns = ['CATEGORY', 'CAPTION']
         
         # Merge
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
         
-        # Check file availability
-        uploaded_names = [f.name for f in uploaded_videos]
-        master_df['Found'] = master_df['FILE_NAME'].apply(lambda x: "✅ Found" if str(x).strip() in uploaded_names else "❌ Missing")
+        # Add selection column (Defaults to False)
+        master_df.insert(0, 'Select', False)
         
-        # UI Table Editor
-        master_df.insert(0, 'Select', True)
+        # Add file validation
+        uploaded_names = [f.name for f in uploaded_videos]
+        master_df['File Status'] = master_df['FILE_NAME'].apply(lambda x: "✅ Found" if str(x).strip() in uploaded_names else "❌ Missing")
+        
+        # UI Table
+        st.write("### 📝 Select files to upload:")
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
-        # 3. Execution Logic with Disabled Button
-        # We check if selected_type is NOT the default choice
+        # 3. Execution Button (Greyed out until a type is selected)
         is_type_selected = selected_type != "Choose..."
-        
         if st.button("🚀 EXECUTE BULK UPLOAD", type="primary", disabled=not is_type_selected):
             selected_rows = edited_df[edited_df['Select'] == True]
             
             if selected_rows.empty:
-                st.warning("Please select at least one file to process.")
+                st.warning("Please select at least one row.")
             else:
                 progress_bar = st.progress(0)
                 status_log = st.empty()
@@ -615,21 +612,18 @@ with tab4:
                         continue
 
                     try:
-                        status_log.info(f"⏳ Uploading: {file_name}")
-                        
-                        # A. Initiate
+                        # API Upload Logic
                         init = requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}).json()
                         
                         if 'upload_session_id' not in init:
-                            raise Exception(f"API Reject: {init.get('error', {}).get('message')}")
-                        
-                        # B. Transfer
+                            raise Exception("Upload start failed")
+                            
                         requests.post(f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'transfer', 'start_offset': 0, 'upload_session_id': init['upload_session_id']},
                             files={'video_file_chunk': file_obj.getvalue()})
-                        
-                        # C. Finish
+                            
+                        # Finalize
                         local_dt = pd.to_datetime(str(row['SCHEDULE_TIME']).strip(), dayfirst=True)
                         utc_ts = int((local_dt - timedelta(hours=8)).timestamp())
                         
@@ -644,24 +638,20 @@ with tab4:
                                 'video_asset_type': 'REEL' if selected_type == "Reel" else 'POST'
                             }).json()
 
-                        results.append({"File": file_name, "Result": "✅ Success" if 'id' in finish else f"⚠️ {finish.get('error', {}).get('message')}"})
+                        results.append({"File": file_name, "Result": "✅ Success" if 'id' in finish else "⚠️ Failed"})
 
                     except Exception as e:
                         results.append({"File": file_name, "Result": f"❌ {str(e)}"})
                     
-                    # Shortened Cooldown (as requested)
+                    # 4. Mandatory cooldown to avoid Code 368
                     wait_time = random.randint(3, 11)
                     for remaining in range(wait_time, 0, -1):
                         status_log.warning(f"Cooldown: Waiting {remaining}s...")
                         time.sleep(1)
-                    
                     progress_bar.progress((i + 1) / len(selected_rows))
 
-                # Summary Notification
-                success_count = sum(1 for r in results if "✅ Success" in r['Result'])
-                st.success(f"🎉 Process Finished: {success_count}/{len(selected_rows)} uploaded.")
+                st.success(f"🎉 Uploads finished: {sum(1 for r in results if 'Success' in r['Result'])}/{len(selected_rows)} success.")
                 st.table(pd.DataFrame(results))
-
 
 
 
