@@ -608,6 +608,11 @@ with tab4:
                             f"https://graph-video.facebook.com/v21.0/{target_id}/videos",
                             data={'access_token': PERMANENT_TOKEN, 'upload_phase': 'start', 'file_size': file_obj.size}
                         ).json()
+
+                        if 'upload_session_id' not in init_res:
+                        st.error(f"DEBUG: Facebook said: {init_res}")
+                        st.stop() # This stops the script so you can read the error
+
                         session_id = init_res['upload_session_id']
                         
                         # 2. TRANSFER
