@@ -610,8 +610,8 @@ with tab4:
                         ).json()
 
                         if 'upload_session_id' not in init_res:
-                        st.error(f"DEBUG: Facebook said: {init_res}")
-                        st.stop() # This stops the script so you can read the error
+                            st.error(f"DEBUG: Facebook said: {init_res}")
+                            st.stop() # This stops the script so you can read the error
 
                         session_id = init_res['upload_session_id']
                         
