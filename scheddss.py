@@ -648,8 +648,8 @@ with tab4:
                         else:
                             results.append({"File": row['FILE NAME'], "Status": f"⚠️ API Warning: {final_res}"})
                             
-                    except Exception as e:
-                        results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
+                        except Exception as e:
+                            results.append({"File": row['FILE NAME'], "Status": f"❌ Error: {str(e)}"})
                     
                     progress_bar.progress((i + 1) / len(selected_rows), text=f"Processed: {row['FILE NAME']}")
 
