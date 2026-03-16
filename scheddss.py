@@ -550,7 +550,6 @@ with tab3:
 
 
 # --- TAB 4: BULK CSV SCHEDULER (RESUMABLE UPLOAD FLOW) ---
-# --- TAB 4: BULK CSV SCHEDULER (FIXED) ---
 with tab4:
     st.markdown(f"### 📍 Current Page: <span style='color:red'>{selected_page_name}</span>", unsafe_allow_html=True)
     st.subheader("📂 Bulk CSV Asset Manager")
@@ -567,7 +566,20 @@ with tab4:
         df_map = pd.read_csv(map_csv)
         df_cap = pd.read_csv(cap_csv)
         master_df = pd.merge(df_map, df_cap, on='CATEGORY', how='left')
-        master_df.insert(0, 'Select', False)
+        
+        # --- NEW: FILE MATCHING LOGIC ---
+        # Check if the file name exists in the uploaded list
+        uploaded_names = [f.name for f in uploaded_videos]
+        master_df['Found'] = master_df['FILE NAME'].apply(lambda x: "✅ Found" if str(x).strip() in uploaded_names else "❌ Missing")
+        
+        # Reorder: Move 'Found' to the very first column
+        cols = ['Found'] + [c for c in master_df.columns if c != 'Found']
+        master_df = master_df[cols]
+        
+        # Add selection checkbox as the second column
+        master_df.insert(1, 'Select', False)
+        
+        # Display table
         edited_df = st.data_editor(master_df, hide_index=True, use_container_width=True)
 
         if st.button("🚀 GO NOW: Queue Selected Files", type="primary", disabled=not is_ready):
